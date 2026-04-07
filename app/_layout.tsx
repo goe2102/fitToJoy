@@ -1,24 +1,39 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { Slot, useRouter, useSegments } from 'expo-router'
+import { useEffect } from 'react'
+import { AuthProvider, useAuth } from '../src/context/AuthContext'
+import { LoadingScreen } from '../src/components/CustomLoadingScreen'
+import { NetworkOverlay } from '../src/components/NetworkOverlay' // Import the overlay
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function InitialLayout() {
+  const { userToken, isLoading } = useAuth()
+  const segments = useSegments()
+  const router = useRouter()
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+  useEffect(() => {
+    if (isLoading) return
+
+    const inAuthGroup = segments[0] === '(auth)'
+
+    if (!userToken && !inAuthGroup) {
+      router.replace('/(auth)/login')
+    } else if (userToken && inAuthGroup) {
+      router.replace('/(tabs)')
+    }
+  }, [userToken, isLoading, segments])
+
+  if (isLoading) {
+    return <LoadingScreen />
+  }
+
+  return <Slot />
+}
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
-  );
+    <AuthProvider>
+      {/* The overlay sits parallel to the app layout */}
+      <NetworkOverlay />
+      <InitialLayout />
+    </AuthProvider>
+  )
 }
