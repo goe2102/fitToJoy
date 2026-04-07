@@ -1,43 +1,55 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# -------------------------------------------------------------------------
+# Node & Dependencies
+# -------------------------------------------------------------------------
 node_modules/
+.pnp
+.pnp.js
 
-# Expo
+# -------------------------------------------------------------------------
+# Environment Variables (CRITICAL FOR SECURITY)
+# -------------------------------------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+
+# -------------------------------------------------------------------------
+# Expo Specific
+# -------------------------------------------------------------------------
 .expo/
 dist/
 web-build/
-expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# -------------------------------------------------------------------------
+# Native Folders (Only needed if you use Expo Prebuild later)
+# -------------------------------------------------------------------------
+ios/
+android/
 
-# Metro
-.metro-health-check*
+# -------------------------------------------------------------------------
+# Firebase / Backend (If you add Cloud Functions or specific config)
+# -------------------------------------------------------------------------
+firebase-debug.log
+firebase-debug.*.log
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
+# -------------------------------------------------------------------------
+# OS / Editor Files (Keeps repo clean for others)
+# -------------------------------------------------------------------------
 .DS_Store
-*.pem
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
 
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
-app-example
-
-# generated native folders
-/ios
-/android
+# -------------------------------------------------------------------------
+# Logs & Testing
+# -------------------------------------------------------------------------
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
