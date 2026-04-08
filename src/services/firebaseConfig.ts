@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-// @ts-ignore
+// @ts-ignore - TS complains but Expo resolves this perfectly
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
@@ -14,7 +14,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 
-// This tells Firebase to permanently save the session to the phone's hard drive
 export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 })
