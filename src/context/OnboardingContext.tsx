@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useState } from 'react'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import { useAuth } from './AuthContext'
 import { supabase } from '../../lib/supabase'
-
-const ONBOARDING_KEY = 'fitToJoy_onboarding_complete'
+import { imageService } from '@/services/imageService'
 
 interface OnboardingContextType {
   isOnboardingComplete: boolean | null
@@ -13,11 +11,10 @@ interface OnboardingContextType {
 }
 
 export interface OnboardingData {
-  name: string
-  goal: string
-  fitnessLevel: string
-  weeklyWorkouts: number
-  focusAreas: string[]
+  id: string
+  username: string
+  birthday: string
+  avatarBase64: string
 }
 
 const OnboardingContext = createContext<OnboardingContextType | undefined>(
@@ -36,42 +33,71 @@ export function OnboardingProvider({
 
   const checkOnboarding = async () => {
     try {
-      const cached = await AsyncStorage.getItem(ONBOARDING_KEY)
-      if (cached === 'true') {
-        setIsOnboardingComplete(true)
-        return
-      }
       if (user) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .select('onboarding_complete')
           .eq('id', user.id)
           .single()
+
+        if (error) {
+          console.error('Error fetching onboarding status:', error)
+          setIsOnboardingComplete(false)
+          return
+        }
+
         const complete = data?.onboarding_complete ?? false
-        if (complete) await AsyncStorage.setItem(ONBOARDING_KEY, 'true')
         setIsOnboardingComplete(complete)
       } else {
         setIsOnboardingComplete(false)
       }
-    } catch {
+    } catch (err) {
+      console.error('Unexpected error checking onboarding:', err)
       setIsOnboardingComplete(false)
     }
   }
 
   const completeOnboarding = async (data: OnboardingData) => {
-    if (user) {
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        name: data.name,
-        goal: data.goal,
-        fitness_level: data.fitnessLevel,
-        weekly_workouts: data.weeklyWorkouts,
-        focus_areas: data.focusAreas,
-        onboarding_complete: true,
-        updated_at: new Date().toISOString(),
-      })
+    if (!user) return
+
+    let finalAvatarUrl = null
+
+    if (data.avatarBase64) {
+      const filePath = `${user.id}/profile.jpg`
+
+      const { url, error: uploadError } = await imageService.uploadImage(
+        'avatars',
+        filePath,
+        data.avatarBase64
+      )
+
+      if (uploadError) {
+        console.error('Failed to upload image:', uploadError)
+        alert(
+          'Bild konnte nicht hochgeladen werden, aber wir speichern den Rest!'
+        )
+      } else {
+        finalAvatarUrl = url
+      }
     }
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true')
+
+    const { error } = await supabase.from('profiles').upsert({
+      id: user.id,
+      username: data.username,
+      birthday: data.birthday,
+      onboarding_complete: true,
+      updated_at: new Date().toISOString(),
+      email: user.email,
+      avatar_url: finalAvatarUrl,
+    })
+
+    if (error) {
+      console.error('Supabase Save Error:', error)
+      alert('Fehler beim Speichern: ' + error.message)
+      return // Stop execution, don't update state!
+    }
+
+    // Only update the React state if the DB save was successful
     setIsOnboardingComplete(true)
   }
 

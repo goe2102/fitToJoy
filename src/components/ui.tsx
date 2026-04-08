@@ -1,5 +1,5 @@
 import { colors, radius, spacing, typography } from '@/constants/theme'
-import React from 'react'
+import React, { useState } from 'react'
 import {
   TouchableOpacity,
   Text,
@@ -97,12 +97,16 @@ export function Input({
   style,
   autoFocus,
 }: InputProps) {
+  // Track focus state to change border color
+  const [isFocused, setIsFocused] = useState(false)
+
   return (
     <View style={[styles.inputWrapper, style]}>
-      {label && <Text style={styles.inputLabel}>{label}</Text>}
+      {label ? <Text style={styles.inputLabel}>{label}</Text> : null}
       <TextInput
         style={[
           styles.input,
+          isFocused && styles.inputFocused, // Apply active border when focused
           error && styles.inputError,
           !editable && styles.inputDisabled,
         ]}
@@ -115,8 +119,10 @@ export function Input({
         autoCapitalize={autoCapitalize}
         editable={editable}
         autoFocus={autoFocus}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
       />
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   )
 }
@@ -129,7 +135,7 @@ interface OtpInputProps {
   length?: number
 }
 
-export function OtpInput({ value, onChange, length = 6 }: OtpInputProps) {
+export function OtpInput({ value, onChange, length = 8 }: OtpInputProps) {
   const digits = value.split('')
 
   return (
@@ -198,32 +204,52 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   inputWrapper: {
-    gap: spacing.xs,
+    width: '100%',
   },
   inputLabel: {
     ...typography.label,
-    color: colors.textSecondary,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   input: {
-    height: 52,
+    height: 50,
+    paddingHorizontal: spacing.md,
+
+    // 1. FORCE reset all vertical paddings to 0
+    paddingVertical: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+
     ...typography.body,
+
+    // 2. OVERRIDE any lineHeight coming from typography.body
+    lineHeight: undefined,
+
     color: colors.text,
+
+    // 3. Keep Android's vertical align
+    textAlignVertical: 'center',
+  },
+  inputFocused: {
+    borderColor: colors.primary, // The primary colored border
+    backgroundColor: colors.background, // Optional: slightly changes bg on focus
   },
   inputError: {
     borderColor: colors.error,
   },
   inputDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
+    backgroundColor: colors.border,
   },
   errorText: {
     ...typography.caption,
     color: colors.error,
-    marginTop: 2,
+    marginTop: spacing.xs,
   },
   // OTP
   otpContainer: {

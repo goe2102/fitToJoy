@@ -117,7 +117,7 @@ export default function SignupScreen() {
 
           {/* Info */}
           <Text style={styles.hint}>
-            Nach der Registrierung erhältst du einen 6-stelligen Code per
+            Nach der Registrierung erhältst du einen 8-stelligen Code per
             E-Mail.
           </Text>
 

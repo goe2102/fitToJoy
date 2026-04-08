@@ -1,13 +1,14 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   Dimensions,
-  SafeAreaView,
   TouchableOpacity,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
 import {
   useOnboarding,
   OnboardingData,
@@ -24,10 +25,87 @@ export default function OnboardingScreen() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [values, setValues] = useState<Record<string, unknown>>({
+    username: '',
+    birthday: '',
     focusAreas: [] as string[],
   })
 
+  // State to track Supabase username check
+  const [usernameStatus, setUsernameStatus] = useState<
+    'idle' | 'checking' | 'available' | 'taken' | 'invalid'
+  >('idle')
+
   const isLast = currentIndex === ONBOARDING_SLIDES.length - 1
+
+  // Debounced Username Availability Check
+  useEffect(() => {
+    const username = (values.username as string)?.trim().toLowerCase()
+    if (!username) {
+      setUsernameStatus('idle')
+      return
+    }
+    if (username.length < 3) {
+      setUsernameStatus('invalid')
+      return
+    }
+
+    setUsernameStatus('checking')
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('username', username)
+          .maybeSingle()
+
+        if (data) {
+          setUsernameStatus('taken')
+        } else {
+          setUsernameStatus('available')
+        }
+      } catch (error) {
+        setUsernameStatus('idle')
+      }
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [values.username])
+
+  // Strict Validation to disable the "Next" button
+  const isNextDisabled = () => {
+    const currentSlide = ONBOARDING_SLIDES[currentIndex]
+
+    // 1. Check Username
+    if (currentSlide.key === 'username') {
+      return usernameStatus !== 'available'
+    }
+
+    // 2. Check Birthday (Strict Date Validation)
+    if (currentSlide.key === 'birthday') {
+      const b = values.birthday as string
+      if (!b || b.length !== 10) return true
+
+      const [d, m, y] = b.split('.').map(Number)
+      const date = new Date(y, m - 1, d)
+
+      // Ensures exact calendar match (blocks "31.02") and reasonable years
+      const isValidDate =
+        date.getFullYear() === y &&
+        date.getMonth() === m - 1 &&
+        date.getDate() === d &&
+        y >= 1900 &&
+        y <= new Date().getFullYear()
+
+      return !isValidDate
+    }
+
+    // 3. Fallback check for empty arrays/strings on other slides
+    const val = values[currentSlide.key]
+    if (Array.isArray(val) && val.length === 0) return true
+    if (!val && val !== 0) return true
+
+    return false
+  }
 
   const goNext = () => {
     if (isLast) {
@@ -48,13 +126,18 @@ export default function OnboardingScreen() {
 
   const handleFinish = async () => {
     setSaving(true)
+    // IMPORTANT: Make sure to update your OnboardingData type in OnboardingContext
+    // to include username and birthday to save them to your database!
+
+    const avatarData = values.avatar as
+      | { base64: string; uri: string }
+      | undefined
+
     await completeOnboarding({
-      name: (values.name as string) ?? '',
-      goal: (values.goal as string) ?? '',
-      fitnessLevel: (values.fitnessLevel as string) ?? '',
-      weeklyWorkouts: (values.weeklyWorkouts as number) ?? 3,
-      focusAreas: (values.focusAreas as string[]) ?? [],
-    } satisfies OnboardingData)
+      username: (values.username as string) ?? '',
+      birthday: (values.birthday as string) ?? '',
+      avatarBase64: avatarData?.base64,
+    } as unknown as OnboardingData)
     setSaving(false)
   }
 
@@ -62,28 +145,35 @@ export default function OnboardingScreen() {
     setValues((prev) => ({ ...prev, [key]: val }))
   }
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      {/* Progress bar */}
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            {
-              width: `${((currentIndex + 1) / ONBOARDING_SLIDES.length) * 100}%`,
-            },
-          ]}
-        />
-      </View>
+  // Pass down dynamic states to slides if they need it
+  const slideExtraState = { usernameStatus }
 
-      {/* Dots */}
-      <View style={styles.dots}>
-        {ONBOARDING_SLIDES.map((_, i) => (
-          <View
-            key={i}
-            style={[styles.dot, i === currentIndex && styles.dotActive]}
-          />
-        ))}
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* Top Header Navigation & Progress */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={goPrev}
+          disabled={currentIndex === 0}
+        >
+          {currentIndex > 0 ? <Text style={styles.backBtnText}>←</Text> : null}
+        </TouchableOpacity>
+
+        {/* Segmented Progress View */}
+        <View style={styles.progressContainer}>
+          {ONBOARDING_SLIDES.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.progressSegment,
+                i <= currentIndex && styles.progressSegmentActive,
+              ]}
+            />
+          ))}
+        </View>
+
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Slides */}
@@ -103,8 +193,10 @@ export default function OnboardingScreen() {
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
             <View style={styles.slideContent}>
-              {item.render(values[item.key], (val: unknown) =>
-                updateValue(item.key, val)
+              {item.render(
+                values[item.key],
+                (val: unknown) => updateValue(item.key, val),
+                slideExtraState
               )}
             </View>
           </View>
@@ -116,63 +208,66 @@ export default function OnboardingScreen() {
         })}
       />
 
-      {/* Navigation */}
-      <View style={styles.nav}>
-        {currentIndex > 0 ? (
-          <TouchableOpacity style={styles.backBtn} onPress={goPrev}>
-            <Text style={styles.backBtnText}>← Zurück</Text>
-          </TouchableOpacity>
-        ) : (
-          <View />
-        )}
+      {/* Bottom Action Area */}
+      <View style={styles.bottomContainer}>
         <Button
-          title={isLast ? "Los geht's 🚀" : 'Weiter'}
+          title={isLast ? "Los geht's 🚀" : 'Nächster Schritt'}
           onPress={goNext}
           loading={saving}
-          style={styles.nextBtn}
+          disabled={isNextDisabled()}
         />
       </View>
-
-      <Text style={styles.stepCounter}>
-        {currentIndex + 1} / {ONBOARDING_SLIDES.length}
-      </Text>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  progressTrack: {
-    height: 3,
-    backgroundColor: colors.surface,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    borderRadius: radius.full,
-    overflow: 'hidden',
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-  },
-  dots: {
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  backBtnText: {
+    fontSize: 24,
+    color: colors.textSecondary,
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  progressContainer: {
+    flex: 1,
+    flexDirection: 'row',
     gap: spacing.xs,
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
   },
-  dot: {
-    width: 6,
-    height: 6,
+  progressSegment: {
+    flex: 1,
+    height: 4,
     borderRadius: radius.full,
-    backgroundColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  dotActive: { width: 20, backgroundColor: colors.primary },
+  progressSegmentActive: {
+    backgroundColor: colors.primary,
+  },
   slide: {
     width: SCREEN_WIDTH,
     flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     alignItems: 'center',
   },
   emojiCircle: {
@@ -200,21 +295,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   slideContent: { width: '100%' },
-  nav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  bottomContainer: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: spacing.md,
-  },
-  backBtn: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
-  backBtnText: { ...typography.body, color: colors.textSecondary },
-  nextBtn: { flex: 1 },
-  stepCounter: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
   },
 })
