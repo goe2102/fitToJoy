@@ -30,7 +30,7 @@ export default function VerifyScreen() {
   }, [cooldown])
 
   const handleVerify = async () => {
-    if (code.length < 6) {
+    if (code.length < 8) {
       setError('Bitte gib den vollständigen 6-stelligen Code ein.')
       return
     }
@@ -78,7 +78,7 @@ export default function VerifyScreen() {
 
         {/* OTP */}
         <View style={styles.otpWrapper}>
-          <OtpInput value={code} onChange={setCode} length={6} />
+          <OtpInput value={code} onChange={setCode} length={8} />
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -88,7 +88,7 @@ export default function VerifyScreen() {
           title='Bestätigen'
           onPress={handleVerify}
           loading={loading}
-          disabled={code.length < 6}
+          disabled={code.length < 8}
           style={styles.button}
         />
 
