@@ -1,43 +1,12 @@
 /**
  * constants/theme.ts
  * Single source of truth for all design tokens.
- * Supports both Colors[theme].xxx (existing pattern) and flat colors.xxx (new files).
+ * Supports both Colors[theme].xxx (existing pattern) and useColors() hook (new pattern).
  */
 
-// ─── Light / Dark token maps (used by existing components: Colors[theme].tint etc.) ─
+// ─── Dark palette ─────────────────────────────────────────────────────────────
 
-const light = {
-  text: '#F0F0FF',
-  background: '#0F0F14',
-  tint: '#6C63FF',
-  icon: '#8888AA',
-  tabIconDefault: '#55556A',
-  tabIconSelected: '#6C63FF',
-  border: '#2E2E3D',
-  surface: '#1A1A24',
-  error: '#FF4C6A',
-  success: '#43E97B',
-} as const
-
-const dark = {
-  text: '#F0F0FF',
-  background: '#0F0F14',
-  tint: '#6C63FF',
-  icon: '#8888AA',
-  tabIconDefault: '#55556A',
-  tabIconSelected: '#6C63FF',
-  border: '#2E2E3D',
-  surface: '#1A1A24',
-  error: '#FF4C6A',
-  success: '#43E97B',
-} as const
-
-/** Used as Colors[theme].tint — keeps existing components working */
-export const Colors = { light, dark } as const
-
-// ─── Flat tokens (used by new auth / onboarding screens) ─────────────────────
-
-export const colors = {
+export const darkColors = {
   primary: '#6C63FF',
   primaryLight: '#8B85FF',
   primaryDark: '#4E47CC',
@@ -57,6 +26,65 @@ export const colors = {
   black: '#000000',
 } as const
 
+// ─── Light palette ────────────────────────────────────────────────────────────
+
+export const lightColors = {
+  primary: '#6C63FF',
+  primaryLight: '#8B85FF',
+  primaryDark: '#4E47CC',
+  secondary: '#FF6584',
+  accent: '#2DD871',
+  background: '#F7F7FC',
+  surface: '#FFFFFF',
+  surfaceElevated: '#EEEEF7',
+  border: '#DDDDF0',
+  text: '#12121E',
+  textSecondary: '#5A5A7A',
+  textMuted: '#9090B0',
+  error: '#E8365A',
+  success: '#2DD871',
+  warning: '#F0A500',
+  white: '#FFFFFF',
+  black: '#000000',
+} as const
+
+export type AppColors = { readonly [K in keyof typeof darkColors]: string }
+
+// ─── Backward-compat: `colors` keeps pointing to dark (existing screens use it statically) ──
+
+export const colors = darkColors
+
+// ─── Legacy Colors map — now with proper light values (used by useThemeColor / useGlobalStyles) ─
+
+export const Colors = {
+  light: {
+    text: lightColors.text,
+    background: lightColors.background,
+    tint: lightColors.primary,
+    icon: lightColors.textSecondary,
+    tabIconDefault: lightColors.textMuted,
+    tabIconSelected: lightColors.primary,
+    border: lightColors.border,
+    surface: lightColors.surface,
+    error: lightColors.error,
+    success: lightColors.success,
+  },
+  dark: {
+    text: darkColors.text,
+    background: darkColors.background,
+    tint: darkColors.primary,
+    icon: darkColors.textSecondary,
+    tabIconDefault: darkColors.textMuted,
+    tabIconSelected: darkColors.primary,
+    border: darkColors.border,
+    surface: darkColors.surface,
+    error: darkColors.error,
+    success: darkColors.success,
+  },
+} as const
+
+// ─── Spacing ──────────────────────────────────────────────────────────────────
+
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -67,6 +95,8 @@ export const spacing = {
   xxxl: 64,
 } as const
 
+// ─── Border radius ────────────────────────────────────────────────────────────
+
 export const radius = {
   sm: 8,
   md: 12,
@@ -74,6 +104,8 @@ export const radius = {
   xl: 24,
   full: 999,
 } as const
+
+// ─── Typography ───────────────────────────────────────────────────────────────
 
 export const typography = {
   h1: { fontSize: 32, fontWeight: '700' as const, letterSpacing: -0.5 },
@@ -86,10 +118,10 @@ export const typography = {
   button: { fontSize: 16, fontWeight: '700' as const, letterSpacing: 0.3 },
 } as const
 
-// Uppercase aliases so any file using Spacing / Radius still compiles
+// Uppercase aliases for backward compat
 export const Spacing = spacing
 export const Radius = radius
 export const Typography = typography
 
-export const theme = { colors, spacing, radius, typography }
+export const theme = { colors: darkColors, spacing, radius, typography }
 export type Theme = typeof theme

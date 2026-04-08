@@ -6,8 +6,11 @@ import {
   OnboardingProvider,
   useOnboarding,
 } from '../src/context/OnboardingContext'
+import { ProfileProvider } from '../src/context/ProfileContext'
+import { UnreadProvider } from '../src/context/UnreadContext'
 import { View, ActivityIndicator } from 'react-native'
 import { colors } from '../src/constants/theme'
+import { useColorScheme } from '../src/hooks/use-color-scheme'
 
 function RouteGuard() {
   const { session, loading: authLoading } = useAuth()
@@ -27,16 +30,17 @@ function RouteGuard() {
     // narrowing before the new route files are fully registered
     const seg0 = segments[0] as string | undefined
 
-    const inAuthGroup = seg0 === '(auth)'
+    const inAuthGroup  = seg0 === '(auth)'
     const inOnboarding = seg0 === '(onboarding)'
-    const inTabs = seg0 === '(tabs)'
+    // All valid authenticated routes: tabs + any modal screens outside tabs
+    const inApp = seg0 === '(tabs)' || seg0 === 'activity' || seg0 === 'chat'
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login' as any)
     } else if (!isOnboardingComplete) {
       if (!inOnboarding) router.replace('/(onboarding)' as any)
     } else {
-      if (!inTabs) router.replace('/(tabs)' as any)
+      if (!inApp) router.replace('/(tabs)' as any)
     }
   }, [session, authLoading, isOnboardingComplete, segments])
 
@@ -59,6 +63,7 @@ function RouteGuard() {
 }
 
 function AppLayout() {
+  const scheme = useColorScheme()
   return (
     <>
       <RouteGuard />
@@ -66,8 +71,11 @@ function AppLayout() {
         <Stack.Screen name='(auth)' />
         <Stack.Screen name='(onboarding)' />
         <Stack.Screen name='(tabs)' />
+        <Stack.Screen name='activity/create' options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name='chat/[id]' />
+        <Stack.Screen name='chat/new' options={{ presentation: 'fullScreenModal' }} />
       </Stack>
-      <StatusBar style='light' />
+      <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
     </>
   )
 }
@@ -76,7 +84,11 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <OnboardingProvider>
-        <AppLayout />
+        <ProfileProvider>
+          <UnreadProvider>
+            <AppLayout />
+          </UnreadProvider>
+        </ProfileProvider>
       </OnboardingProvider>
     </AuthProvider>
   )

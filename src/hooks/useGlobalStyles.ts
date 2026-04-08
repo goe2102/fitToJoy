@@ -1,28 +1,24 @@
 import { StyleSheet } from 'react-native'
-import { Colors, Spacing, Radius } from '../constants/theme'
-import { useColorScheme } from './use-color-scheme'
+import { Spacing, Radius } from '../constants/theme'
+import { useColors } from './useColors'
 
 export function useGlobalStyles() {
-  // 1. Get the current active theme ('light' or 'dark')
-  const theme = useColorScheme() ?? 'light'
+  const colors = useColors()
 
-  // 2. Grab the specific color palette for that theme
-  const colors = Colors[theme]
-
-  // 3. Return the StyleSheet
   return StyleSheet.create({
-    // --- LAYOUTS ---
     container: {
       flex: 1,
       backgroundColor: colors.background,
       padding: Spacing.md,
     },
+    safeContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
     },
-
-    // --- THE GLOBAL CARD YOU ASKED FOR ---
     card: {
       backgroundColor: colors.surface,
       borderRadius: Radius.md,
@@ -30,16 +26,12 @@ export function useGlobalStyles() {
       marginBottom: Spacing.md,
       borderColor: colors.border,
       borderWidth: 1,
-      // Subtle shadow for iOS
-      shadowColor: '#000',
+      shadowColor: colors.black,
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: theme === 'light' ? 0.1 : 0.3,
+      shadowOpacity: 0.08,
       shadowRadius: 4,
-      // Elevation for Android
-      elevation: 3,
+      elevation: 2,
     },
-
-    // --- TYPOGRAPHY ---
     title: {
       fontSize: 24,
       fontWeight: 'bold',
@@ -53,7 +45,7 @@ export function useGlobalStyles() {
     },
     subtext: {
       fontSize: 14,
-      color: colors.icon,
+      color: colors.textSecondary,
     },
   })
 }
