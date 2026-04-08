@@ -1,87 +1,90 @@
-import React, { createContext, useState, useEffect, useContext } from 'react'
-import { auth } from '../services/firebaseConfig'
-import {
-  onAuthStateChanged,
-  signOut as firebaseSignOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendEmailVerification,
-} from 'firebase/auth'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import { Session, User } from '@supabase/supabase-js'
+import { supabase } from '../../lib/supabase'
 
 interface AuthContextType {
-  userToken: string | null
-  isLoading: boolean
-  hasOnboarded: boolean
-  completeOnboarding: () => Promise<void>
-  signUp: (email: string, pass: string) => Promise<void>
-  signIn: (email: string, pass: string) => Promise<void>
-  logOut: () => Promise<void>
+  session: Session | null
+  user: User | null
+  loading: boolean
+  signUp: (email: string, password: string) => Promise<{ error: Error | null }>
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>
+  signOut: () => Promise<void>
+  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>
+  resendOtp: (email: string) => Promise<{ error: Error | null }>
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [userToken, setUserToken] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [hasOnboarded, setHasOnboarded] = useState(false)
+  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const checkState = async () => {
-      // Check if user previously finished onboarding
-      const onboardStatus = await AsyncStorage.getItem('@has_onboarded')
-      if (onboardStatus === 'true') setHasOnboarded(true)
+    // Load session from AsyncStorage on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
 
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        // Only log them in if they exist AND verified their email
-        if (user && user.emailVerified) {
-          setUserToken(user.uid)
-        } else {
-          setUserToken(null)
-        }
-        setIsLoading(false)
-      })
-      return unsubscribe
-    }
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
 
-    checkState()
+    return () => subscription.unsubscribe()
   }, [])
 
-  const signUp = async (email: string, pass: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass)
-    await sendEmailVerification(cred.user)
-    // We sign them out immediately so they are forced to go verify their email
-    await firebaseSignOut(auth)
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({ email, password })
+    return { error }
   }
 
-  const signIn = async (email: string, pass: string) => {
-    const cred = await signInWithEmailAndPassword(auth, email, pass)
-    if (!cred.user.emailVerified) {
-      await firebaseSignOut(auth)
-      throw new Error('Please verify your email before logging in.')
-    }
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    return { error }
   }
 
-  const completeOnboarding = async () => {
-    await AsyncStorage.setItem('@has_onboarded', 'true')
-    setHasOnboarded(true)
+  const signOut = async () => {
+    await supabase.auth.signOut()
   }
 
-  const logOut = async () => {
-    await firebaseSignOut(auth)
-    setUserToken(null)
+  const verifyOtp = async (email: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'signup',
+    })
+    return { error }
+  }
+
+  const resendOtp = async (email: string) => {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+    })
+    return { error }
   }
 
   return (
     <AuthContext.Provider
       value={{
-        userToken,
-        isLoading,
-        hasOnboarded,
-        completeOnboarding,
+        session,
+        user,
+        loading,
         signUp,
         signIn,
-        logOut,
+        signOut,
+        verifyOtp,
+        resendOtp,
       }}
     >
       {children}
@@ -91,6 +94,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within an AuthProvider')
+  if (!context) throw new Error('useAuth must be used within AuthProvider')
   return context
 }

@@ -1,35 +1,46 @@
+import { colors } from '@/constants/theme'
 import { Tabs } from 'expo-router'
-import React from 'react'
+import { Text } from 'react-native'
 
-import { Colors } from '@/constants/theme'
-import { useColorScheme } from '@/hooks/use-color-scheme'
-import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme()
-
+export default function AppLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
-        name='index'
+        name='home'
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => (
-            <MaterialIcons size={28} name={'person'} color={color} />
+            <Text style={{ fontSize: 20, color }}>🏠</Text>
           ),
         }}
       />
       <Tabs.Screen
-        name='explore'
+        name='workout'
         options={{
-          title: 'Explore',
+          title: 'Training',
           tabBarIcon: ({ color }) => (
-            <MaterialIcons size={28} name={'pedal-bike'} color={color} />
+            <Text style={{ fontSize: 20, color }}>💪</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name='profile'
+        options={{
+          title: 'Profil',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 20, color }}>👤</Text>
           ),
         }}
       />

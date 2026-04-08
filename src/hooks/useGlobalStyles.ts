@@ -24,7 +24,7 @@ export function useGlobalStyles() {
 
     // --- THE GLOBAL CARD YOU ASKED FOR ---
     card: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: Radius.md,
       padding: Spacing.md,
       marginBottom: Spacing.md,

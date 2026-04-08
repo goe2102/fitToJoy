@@ -2,114 +2,150 @@ import React, { useState } from 'react'
 import {
   View,
   Text,
+  StyleSheet,
   TouchableOpacity,
-  TextInput,
-  useColorScheme,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  SafeAreaView,
 } from 'react-native'
-import { Colors } from '@/constants/theme'
-import { useAuth } from '@/context/AuthContext'
-import { useGlobalStyles } from '@/hooks/useGlobalStyles'
+import { router } from 'expo-router'
+import { useAuth } from '../../src/context/AuthContext'
+import { Button, Input } from '@/components/ui'
+import { colors, spacing, radius, typography } from '@/constants/theme'
 
 export default function LoginScreen() {
-  const globalStyles = useGlobalStyles()
-  const theme = useColorScheme() ?? 'light'
-  const { signIn, signUp } = useAuth()
-
+  const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleAction = async () => {
-    try {
-      if (isRegistering) {
-        await signUp(email, password)
-        Alert.alert(
-          'Success',
-          'Verification email sent! Please check your inbox.'
-        )
-        setIsRegistering(false)
-      } else {
-        await signIn(email, password)
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.message)
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setError('Bitte füll alle Felder aus.')
+      return
     }
+    setError('')
+    setLoading(true)
+    const { error } = await signIn(email.trim().toLowerCase(), password)
+    setLoading(false)
+    if (error) {
+      setError('E-Mail oder Passwort falsch.')
+    }
+    // RouteGuard in _layout.tsx handles navigation after successful login
   }
 
   return (
-    <View style={[globalStyles.container, { justifyContent: 'center' }]}>
-      <View style={globalStyles.card}>
-        <Text style={globalStyles.title}>
-          {isRegistering ? 'Create Account' : 'Welcome Back'}
-        </Text>
-        <Text style={globalStyles.body}>
-          {isRegistering
-            ? 'Sign up to get started.'
-            : 'Sign in to your account.'}
-        </Text>
-
-        <TextInput
-          style={{
-            marginTop: 24,
-            padding: 16,
-            borderColor: Colors[theme].border,
-            borderWidth: 1,
-            borderRadius: 8,
-            color: Colors[theme].text,
-            fontSize: 16,
-          }}
-          placeholder='Email address'
-          placeholderTextColor={Colors[theme].icon}
-          autoCapitalize='none'
-          keyboardType='email-address'
-          value={email}
-          onChangeText={setEmail}
-        />
-
-        <TextInput
-          style={{
-            marginTop: 16,
-            padding: 16,
-            borderColor: Colors[theme].border,
-            borderWidth: 1,
-            borderRadius: 8,
-            color: Colors[theme].text,
-            fontSize: 16,
-          }}
-          placeholder='Password'
-          placeholderTextColor={Colors[theme].icon}
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <TouchableOpacity
-          style={{
-            marginTop: 24,
-            padding: 16,
-            backgroundColor: Colors[theme].tint,
-            borderRadius: 8,
-            alignItems: 'center',
-          }}
-          onPress={handleAction}
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps='handled'
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>
-            {isRegistering ? 'Sign Up' : 'Log In'}
-          </Text>
-        </TouchableOpacity>
+          {/* Logo / Header */}
+          <View style={styles.header}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoEmoji}>🏋️</Text>
+            </View>
+            <Text style={styles.title}>fitToJoy</Text>
+            <Text style={styles.subtitle}>Schön, dass du wieder da bist.</Text>
+          </View>
 
-        <TouchableOpacity
-          style={{ marginTop: 16, alignItems: 'center' }}
-          onPress={() => setIsRegistering(!isRegistering)}
-        >
-          <Text style={{ color: Colors[theme].icon }}>
-            {isRegistering
-              ? 'Already have an account? Log In'
-              : "Don't have an account? Sign Up"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          {/* Form */}
+          <View style={styles.form}>
+            <Input
+              label='E-Mail'
+              placeholder='deine@email.com'
+              value={email}
+              onChangeText={setEmail}
+              keyboardType='email-address'
+              autoCapitalize='none'
+            />
+            <Input
+              label='Passwort'
+              placeholder='••••••••'
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            <Button title='Einloggen' onPress={handleLogin} loading={loading} />
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Noch kein Konto?</Text>
+            <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+              <Text style={styles.footerLink}> Registrieren</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   )
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
+  container: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxxl,
+    paddingBottom: spacing.xl,
+    justifyContent: 'center',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing.xxl,
+  },
+  logoCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  logoEmoji: { fontSize: 36 },
+  title: {
+    ...typography.h1,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  form: {
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.error,
+    textAlign: 'center',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  footerText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  footerLink: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+})

@@ -1,46 +1,83 @@
-import { Slot, useRouter, useSegments } from 'expo-router'
 import { useEffect } from 'react'
-import { AuthProvider, useAuth } from '@/context/AuthContext'
-import { LoadingScreen } from '@/components/CustomLoadingScreen'
-import { NetworkOverlay } from '@/components/NetworkOverlay'
+import { Stack, router, useSegments } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
+import { AuthProvider, useAuth } from '../src/context/AuthContext'
+import {
+  OnboardingProvider,
+  useOnboarding,
+} from '../src/context/OnboardingContext'
+import { View, ActivityIndicator } from 'react-native'
+import { colors } from '../src/constants/theme'
 
-function InitialLayout() {
-  const { userToken, isLoading, hasOnboarded } = useAuth()
+function RouteGuard() {
+  const { session, loading: authLoading } = useAuth()
+  const { isOnboardingComplete, checkOnboarding } = useOnboarding()
   const segments = useSegments()
-  const router = useRouter()
 
   useEffect(() => {
-    if (isLoading) return
-
-    const inAuthGroup = segments[0] === '(auth)'
-    const inOnboardingGroup = (segments[0] as string) === '(onboarding)'
-
-    if (!userToken && !inAuthGroup) {
-      // 1. Not logged in -> Send to Login
-      router.replace('/(auth)/login')
-    } else if (userToken && !hasOnboarded && !inOnboardingGroup) {
-      // 2. Logged in, but hasn't onboarded -> Send to Setup
-      router.replace('/(onboarding)' as any)
-    } else if (
-      userToken &&
-      hasOnboarded &&
-      (inAuthGroup || inOnboardingGroup)
-    ) {
-      // 3. Logged in and onboarded -> Send to App
-      router.replace('/(tabs)')
+    if (session?.user) {
+      checkOnboarding()
     }
-  }, [userToken, isLoading, hasOnboarded, segments])
+  }, [session])
 
-  if (isLoading) return <LoadingScreen />
+  useEffect(() => {
+    if (authLoading || (session && isOnboardingComplete === null)) return
 
-  return <Slot />
+    // Cast segments[0] to string to avoid Expo Router's strict route-type
+    // narrowing before the new route files are fully registered
+    const seg0 = segments[0] as string | undefined
+
+    const inAuthGroup = seg0 === '(auth)'
+    const inOnboarding = seg0 === '(onboarding)'
+    const inTabs = seg0 === '(tabs)'
+
+    if (!session) {
+      if (!inAuthGroup) router.replace('/(auth)/login' as any)
+    } else if (!isOnboardingComplete) {
+      if (!inOnboarding) router.replace('/(onboarding)' as any)
+    } else {
+      if (!inTabs) router.replace('/(tabs)' as any)
+    }
+  }, [session, authLoading, isOnboardingComplete, segments])
+
+  if (authLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={colors.primary} size='large' />
+      </View>
+    )
+  }
+
+  return null
+}
+
+function AppLayout() {
+  return (
+    <>
+      <RouteGuard />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name='(auth)' />
+        <Stack.Screen name='(onboarding)' />
+        <Stack.Screen name='(tabs)' />
+      </Stack>
+      <StatusBar style='light' />
+    </>
+  )
 }
 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <NetworkOverlay />
-      <InitialLayout />
+      <OnboardingProvider>
+        <AppLayout />
+      </OnboardingProvider>
     </AuthProvider>
   )
 }
