@@ -93,19 +93,19 @@ export const followService = {
     return { data: (data as any) ?? [], error }
   },
 
-  async getFollowers(userId: string): Promise<{ data: Pick<Profile, 'id' | 'username' | 'avatar_url'>[]; error: Error | null }> {
+  async getFollowers(userId: string): Promise<{ data: Pick<Profile, 'id' | 'username' | 'avatar_url' | 'is_verified'>[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('follows')
-      .select('follower:profiles!follows_follower_id_fkey(id, username, avatar_url)')
+      .select('follower:profiles!follows_follower_id_fkey(id, username, avatar_url, is_verified)')
       .eq('following_id', userId)
       .eq('status', 'accepted')
     return { data: data?.map((d: any) => d.follower) ?? [], error }
   },
 
-  async getFollowing(userId: string): Promise<{ data: Pick<Profile, 'id' | 'username' | 'avatar_url'>[]; error: Error | null }> {
+  async getFollowing(userId: string): Promise<{ data: Pick<Profile, 'id' | 'username' | 'avatar_url' | 'is_verified'>[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('follows')
-      .select('following:profiles!follows_following_id_fkey(id, username, avatar_url)')
+      .select('following:profiles!follows_following_id_fkey(id, username, avatar_url, is_verified)')
       .eq('follower_id', userId)
       .eq('status', 'accepted')
     return { data: data?.map((d: any) => d.following) ?? [], error }

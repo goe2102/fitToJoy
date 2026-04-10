@@ -151,6 +151,7 @@ function MembersModal({
   const [participants, setParticipants] = useState<any[]>([])
   const [host, setHost] = useState<any>(null)
   const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -159,7 +160,7 @@ function MembersModal({
       setLoading(true)
       const [partRes, hostRes] = await Promise.all([
         groupChatService.getParticipants(activityId),
-        supabase.from('profiles').select('id, username, avatar_url').eq('id', hostId).single(),
+        supabase.from('profiles').select('id, username, avatar_url, is_verified').eq('id', hostId).single(),
       ])
       setParticipants(partRes.data)
       setHost(hostRes.data)
@@ -184,24 +185,26 @@ function MembersModal({
 
   return (
     <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
-      <View style={[membS.container, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+      <View style={[membS.container, { backgroundColor: colors.background, paddingTop: spacing.lg }]}>
         {/* Header */}
-        <View style={[membS.header, { borderBottomColor: colors.border }]}>
+        <View style={membS.header}>
           <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>Members ({allMembers.length})</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name='close' size={24} color={colors.text} />
+          <TouchableOpacity onPress={onClose} hitSlop={12} style={[membS.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
         {/* Search */}
-        <View style={[membS.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-          <Ionicons name='search' size={16} color={colors.textMuted} />
+        <View style={[membS.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
+          <Ionicons name='search' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
           <RNTextInput
             style={[membS.searchInput, { color: colors.text }]}
             placeholder='Search members…'
             placeholderTextColor={colors.textMuted}
             value={query}
             onChangeText={setQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             autoCorrect={false}
           />
           {query.length > 0 && (
@@ -232,12 +235,17 @@ function MembersModal({
                     }}
                     activeOpacity={0.7}
                   >
-                    <SmallAvatar uri={item.profile?.avatar_url} size={44} colors={colors} />
+                    <SmallAvatar uri={item.profile?.avatar_url} size={52} colors={colors} />
                   </TouchableOpacity>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typography.label, { color: colors.text }]}>
-                      @{item.profile?.username ?? '—'}
-                    </Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>
+                        @{item.profile?.username ?? '—'}
+                      </Text>
+                      {(item.profile as any)?.is_verified && (
+                        <Ionicons name='checkmark-circle' size={15} color={colors.primary} />
+                      )}
+                    </View>
                     <Text style={[typography.caption, { color: item.role === 'Host' ? colors.primary : colors.textMuted }]}>
                       {item.role}{isMe ? ' · You' : ''}
                     </Text>
@@ -270,18 +278,21 @@ const membS = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.md,
-    borderBottomWidth: 1,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
+  },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
   },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     margin: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     borderRadius: radius.full, borderWidth: 1,
   },
-  searchInput: { flex: 1, ...typography.body, padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, padding: 0, textAlignVertical: 'center', includeFontPadding: false },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth,
   },
   dmBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

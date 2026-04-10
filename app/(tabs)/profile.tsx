@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native'
+import { imageService } from '@/services/imageService'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { Ionicons } from '@expo/vector-icons'
@@ -227,7 +228,17 @@ export default function ProfileScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { user } = useAuth()
-  const { profile, stats, loading, refreshProfile } = useProfile()
+  const { profile, stats, loading, refreshProfile, updateAvatar } = useProfile()
+  const [avatarSaving, setAvatarSaving] = useState(false)
+
+  const onPickAvatar = async () => {
+    const result = await imageService.pickImage([1, 1])
+    if (!result?.base64) return
+    setAvatarSaving(true)
+    const { error } = await updateAvatar(result.base64)
+    setAvatarSaving(false)
+    if (error) Alert.alert('Error', 'Could not update photo. Please try again.')
+  }
 
   const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
   const [activeTab, setActiveTab] = useState<ActivityTab>('hosting')
@@ -305,7 +316,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.safe]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={[styles.header, { backgroundColor: colors.background }]}>
           <Text style={styles.screenTitle}>Profile</Text>
         </View>
         <View style={[styles.centered, { flex: 1, backgroundColor: colors.background }]}>
@@ -318,7 +329,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.safe]} edges={['top']}>
       {/* ── Header ── */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         <Text style={styles.screenTitle}>Profile</Text>
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings' as any)}>
           <Ionicons name='settings-outline' size={22} color={colors.text} />
@@ -340,27 +351,27 @@ export default function ProfileScreen() {
       >
         {/* ── Avatar + identity ── */}
         <View style={styles.identitySection}>
-          <View style={styles.avatarWrapper}>
-            {profile?.avatar_url
-              ? (
-                <Image
-                  source={{ uri: profile.avatar_url }}
-                  style={styles.avatar}
-                  contentFit='cover'
-                />
-              )
-              : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Ionicons name='person' size={40} color={colors.textMuted} />
-                </View>
-              )
-            }
+          <TouchableOpacity onPress={onPickAvatar} disabled={avatarSaving} activeOpacity={0.8} style={styles.avatarWrapper}>
+            {avatarSaving ? (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.avatar} contentFit='cover' />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name='person' size={40} color={colors.textMuted} />
+              </View>
+            )}
             {profile?.is_verified && (
               <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
                 <Ionicons name='checkmark' size={11} color={colors.white} />
               </View>
             )}
-          </View>
+            <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+              <Ionicons name='camera' size={12} color='#fff' />
+            </View>
+          </TouchableOpacity>
 
           <Text style={styles.username}>@{profile?.username ?? '—'}</Text>
           {profile?.bio
@@ -458,7 +469,7 @@ export default function ProfileScreen() {
 
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.surface },
+    safe: { flex: 1, backgroundColor: colors.background },
     centered: { alignItems: 'center', justifyContent: 'center' },
     header: {
       flexDirection: 'row',
@@ -466,7 +477,6 @@ function makeStyles(colors: AppColors) {
       justifyContent: 'space-between',
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.md,
-      borderBottomWidth: 1,
     },
     scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
     screenTitle: { ...typography.h2, color: colors.text },
@@ -487,6 +497,17 @@ function makeStyles(colors: AppColors) {
       paddingVertical: spacing.lg,
     },
     avatarWrapper: { position: 'relative', marginBottom: spacing.md },
+    cameraBadge: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+    },
     avatar: {
       width: 96,
       height: 96,

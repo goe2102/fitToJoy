@@ -40,4 +40,22 @@ export const blockService = {
       .eq('blocker_id', userId)
     return { data: data?.map((b) => b.blocked_id) ?? [], error }
   },
+
+  async getBlockedUsersWithProfiles(userId: string) {
+    const { data, error } = await supabase
+      .from('blocks')
+      .select('created_at, blocked:profiles!blocks_blocked_id_fkey(id, username, avatar_url, is_verified)')
+      .eq('blocker_id', userId)
+      .order('created_at', { ascending: false })
+    return {
+      data: (data ?? []).map((b: any) => ({ ...b.blocked, blocked_since: b.created_at })) as {
+        id: string
+        username: string
+        avatar_url: string | null
+        is_verified: boolean
+        blocked_since: string
+      }[],
+      error,
+    }
+  },
 }

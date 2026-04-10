@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   InteractionManager,
+  TextInput,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
@@ -18,7 +19,7 @@ import { useColors } from '@/hooks/useColors'
 import { radius, spacing, typography } from '@/constants/theme'
 import type { Profile } from '@/types'
 
-type UserRow = Pick<Profile, 'id' | 'username' | 'avatar_url'>
+type UserRow = Pick<Profile, 'id' | 'username' | 'avatar_url' | 'is_verified'>
 type ListType = 'followers' | 'following'
 
 // ─── Relationship label ───────────────────────────────────────────────────────
@@ -74,6 +75,8 @@ export default function FollowListModal({
   const [myFollowingIds, setMyFollowingIds] = useState<Set<string>>(new Set())
   const [myFollowerIds, setMyFollowerIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
+  const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
 
   useEffect(() => {
     if (!visible) return
@@ -101,6 +104,10 @@ export default function FollowListModal({
     return () => { cancelled = true }
   }, [visible, targetUserId, currentUserId, type])
 
+  const filtered = query.trim()
+    ? users.filter((u) => u.username?.toLowerCase().includes(query.toLowerCase()))
+    : users
+
   const handleUserPress = (userId: string) => {
     onClose()
     InteractionManager.runAfterInteractions(() => router.push(`/profile/${userId}` as any))
@@ -117,45 +124,29 @@ export default function FollowListModal({
         onPress={() => handleUserPress(item.id)}
       >
         {item.avatar_url ? (
-          <Image
-            source={{ uri: item.avatar_url }}
-            style={styles.avatar}
-            contentFit='cover'
-          />
+          <Image source={{ uri: item.avatar_url }} style={styles.avatar} contentFit='cover' />
         ) : (
           <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Ionicons name='person' size={18} color={colors.textMuted} />
+            <Ionicons name='person' size={22} color={colors.textMuted} />
           </View>
         )}
-        <Text style={[typography.label, { color: colors.text, flex: 1 }]} numberOfLines={1}>
-          @{item.username}
-        </Text>
-        {label && (
-          <View style={[
-            styles.badge,
-            {
-              backgroundColor:
-                label === 'Friends' ? colors.primary + '20'
-                : label === 'You' ? colors.surfaceElevated
-                : colors.surfaceElevated,
-              borderColor:
-                label === 'Friends' ? colors.primary + '60'
-                : colors.border,
-            },
-          ]}>
-            <Text style={[
-              typography.caption,
-              {
-                color: label === 'Friends' ? colors.primary : colors.textSecondary,
-                fontWeight: '600',
-              },
-            ]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>
+              @{item.username}
+            </Text>
+            {item.is_verified && (
+              <Ionicons name='checkmark-circle' size={15} color={colors.primary} />
+            )}
+          </View>
+          {label && (
+            <Text style={[typography.caption, { color: label === 'Friends' ? colors.primary : colors.textMuted, marginTop: 1 }]}>
               {label}
             </Text>
-          </View>
-        )}
+          )}
+        </View>
         {!isMe && (
-          <Ionicons name='chevron-forward' size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
+          <Ionicons name='chevron-forward' size={16} color={colors.textMuted} />
         )}
       </TouchableOpacity>
     )
@@ -170,29 +161,50 @@ export default function FollowListModal({
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { paddingTop: spacing.lg }]}>
           <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>
             {title ?? (type === 'followers' ? 'Followers' : 'Following')}
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name='close' size={24} color={colors.text} />
+          <TouchableOpacity onPress={onClose} hitSlop={12} style={[styles.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
           </TouchableOpacity>
+        </View>
+
+        {/* Search */}
+        <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
+          <Ionicons name='search' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder='Search…'
+            placeholderTextColor={colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            autoCorrect={false}
+            autoCapitalize='none'
+          />
+          {query.length > 0 && (
+            <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons name='close-circle' size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {loading ? (
           <View style={styles.centered}>
             <ActivityIndicator color={colors.primary} size='large' />
           </View>
-        ) : users.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <View style={styles.centered}>
             <Ionicons name='people-outline' size={40} color={colors.textMuted} />
             <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.md }]}>
-              {type === 'followers' ? 'No followers yet' : 'Not following anyone'}
+              {query ? 'No results' : type === 'followers' ? 'No followers yet' : 'Not following anyone'}
             </Text>
           </View>
         ) : (
           <FlatList
-            data={users}
+            data={filtered}
             keyExtractor={(u) => u.id}
             renderItem={renderItem}
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
@@ -212,10 +224,28 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: spacing.lg,
       paddingBottom: spacing.md,
-      borderBottomWidth: 1,
     },
+    closeBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.full,
+      borderWidth: 1,
+    },
+    searchInput: { flex: 1, fontSize: 16, padding: 0, textAlignVertical: 'center', includeFontPadding: false },
     centered: {
       flex: 1,
       alignItems: 'center',
@@ -225,15 +255,15 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
-      borderBottomWidth: 1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
     avatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
     },
     avatarPlaceholder: {
       backgroundColor: colors.surfaceElevated,

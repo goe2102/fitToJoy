@@ -308,6 +308,7 @@ export default function ChatsScreen() {
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const openSwipeRef = useRef<Swipeable | null>(null)
 
   const bellBadge = requestCount + notificationCount
@@ -475,11 +476,11 @@ export default function ChatsScreen() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
 
         {/* ── Header ── */}
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={[styles.header, { backgroundColor: colors.background }]}>
           <Text style={[typography.h2, { color: colors.text }]}>Messages</Text>
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.bellBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.7}>
@@ -500,17 +501,19 @@ export default function ChatsScreen() {
         </View>
 
         {/* ── Search bar ── */}
-        <View style={[styles.searchWrap, { backgroundColor: colors.surface }]}>
-          <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Ionicons name='search-outline' size={16} color={colors.textMuted} />
+        <View style={[styles.searchWrap, { backgroundColor: colors.background }]}>
+          <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
+            <Ionicons name='search-outline' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
               placeholder='Search chats…'
               placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
               returnKeyType='search'
-              clearButtonMode='while-editing'
+              clearButtonMode='never'
               autoCorrect={false}
               autoCapitalize='none'
             />
@@ -596,7 +599,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   bellBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
@@ -607,7 +609,6 @@ const styles = StyleSheet.create({
   searchWrap: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   searchBar: {
     flexDirection: 'row',
@@ -621,7 +622,9 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
-    paddingVertical: 0,
+    padding: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
 
   listContent: { paddingTop: spacing.sm, paddingBottom: 120 },

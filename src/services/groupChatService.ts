@@ -194,7 +194,7 @@ export const groupChatService = {
   async getParticipants(activityId: string) {
     const { data, error } = await supabase
       .from('participants')
-      .select('user_id, status, profile:profiles!participants_user_id_fkey(id, username, avatar_url)')
+      .select('user_id, status, profile:profiles!participants_user_id_fkey(id, username, avatar_url, is_verified)')
       .eq('activity_id', activityId)
       .in('status', ['joined', 'approved'])
 

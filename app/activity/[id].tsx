@@ -94,12 +94,19 @@ function ParticipantItem({
         <Image source={{ uri: participant.profile.avatar_url }} style={styles.avatar} contentFit='cover' />
       ) : (
         <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-          <Ionicons name='person' size={16} color={colors.textMuted} />
+          <Ionicons name='person' size={20} color={colors.textMuted} />
         </View>
       )}
-      <Text style={[typography.label, { color: colors.text, flex: 1 }]}>
-        @{participant.profile?.username ?? '—'}
-      </Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>
+            @{participant.profile?.username ?? '—'}
+          </Text>
+          {(participant.profile as any)?.is_verified && (
+            <Ionicons name='checkmark-circle' size={15} color={colors.primary} />
+          )}
+        </View>
+      </View>
 
       {waitlistPosition !== undefined && (
         <View style={[styles.waitlistBadge, { backgroundColor: colors.surfaceElevated }]}>
@@ -206,10 +213,10 @@ function EditModal({
     <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
       <SafeAreaView style={[{ flex: 1 }, { backgroundColor: colors.background }]} edges={['top']}>
         {/* Header */}
-        <View style={[styles.editHeader, { borderBottomColor: colors.border }]}>
+        <View style={styles.editHeader}>
           <Text style={[typography.h3, { color: colors.text }]}>Edit Activity</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name='close' size={24} color={colors.text} />
+          <TouchableOpacity onPress={onClose} hitSlop={12} style={[styles.editCloseBtn, { backgroundColor: colors.surfaceElevated }]}>
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -917,11 +924,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  avatar: { width: 40, height: 40, borderRadius: 20 },
+  avatar: { width: 52, height: 52, borderRadius: 26 },
   actionBtns: { flexDirection: 'row', gap: spacing.sm },
   actionBtn: {
     paddingHorizontal: spacing.md,
@@ -996,9 +1003,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  editCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editSaveBar: {
     paddingHorizontal: spacing.md,

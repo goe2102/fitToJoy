@@ -11,13 +11,17 @@ import {
   Alert,
   InteractionManager,
 } from 'react-native'
-import MapView, { Marker, PROVIDER_DEFAULT, type Region } from 'react-native-maps'
+import MapView, {
+  Marker,
+  PROVIDER_DEFAULT,
+  type Region,
+} from 'react-native-maps'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
-import { router, useFocusEffect } from 'expo-router'
+import { router, useFocusEffect, useNavigation } from 'expo-router'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
@@ -31,7 +35,11 @@ import type { Activity, Participant } from '@/types'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  return new Date(d).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 function formatTime(t: string) {
   const [h, m] = t.split(':')
@@ -40,7 +48,8 @@ function formatTime(t: string) {
 }
 function formatDuration(m: number) {
   if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60), r = m % 60
+  const h = Math.floor(m / 60),
+    r = m % 60
   return r ? `${h}h ${r}m` : `${h}h`
 }
 
@@ -61,12 +70,19 @@ function ActivityMarker({
 
   return (
     <Marker
-      coordinate={{ latitude: activity.latitude, longitude: activity.longitude }}
+      coordinate={{
+        latitude: activity.latitude,
+        longitude: activity.longitude,
+      }}
       onPress={onPress}
       tracksViewChanges={hasCover && !imgLoaded}
       anchor={{ x: 0.5, y: 1 }}
     >
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={mStyles.wrapper}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.85}
+        style={mStyles.wrapper}
+      >
         {/* Pin circle */}
         <View style={[mStyles.pin, { backgroundColor: accent }]}>
           {hasCover ? (
@@ -111,21 +127,46 @@ function ParticipantRow({
   onMessage?: () => void
 }) {
   return (
-    <View style={[styles.participantRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <TouchableOpacity style={styles.participantInfo} onPress={onPress} activeOpacity={0.7}>
-        {p.profile?.avatar_url
-          ? <Image source={{ uri: p.profile.avatar_url }} style={styles.participantAvatar} contentFit='cover' />
-          : (
-            <View style={[styles.participantAvatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-              <Ionicons name='person' size={15} color={colors.textMuted} />
-            </View>
-          )
-        }
+    <View
+      style={[
+        styles.participantRow,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
+      <TouchableOpacity
+        style={styles.participantInfo}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        {p.profile?.avatar_url ? (
+          <Image
+            source={{ uri: p.profile.avatar_url }}
+            style={styles.participantAvatar}
+            contentFit='cover'
+          />
+        ) : (
+          <View
+            style={[
+              styles.participantAvatar,
+              {
+                backgroundColor: colors.surfaceElevated,
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
+          >
+            <Ionicons name='person' size={15} color={colors.textMuted} />
+          </View>
+        )}
         <View>
-          <Text style={[typography.label, { color: colors.text, fontSize: 14 }]}>
+          <Text
+            style={[typography.label, { color: colors.text, fontSize: 14 }]}
+          >
             @{p.profile?.username ?? '—'}
           </Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>Tap to view profile</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Tap to view profile
+          </Text>
         </View>
       </TouchableOpacity>
       {/* Message button */}
@@ -135,7 +176,11 @@ function ParticipantRow({
           style={[styles.dmBtn, { borderColor: colors.border }]}
           activeOpacity={0.8}
         >
-          <Ionicons name='chatbubble-outline' size={14} color={colors.primary} />
+          <Ionicons
+            name='chatbubble-outline'
+            size={14}
+            color={colors.primary}
+          />
         </TouchableOpacity>
       )}
       {isHost && (
@@ -145,7 +190,9 @@ function ParticipantRow({
           activeOpacity={0.8}
         >
           <Ionicons name='person-remove-outline' size={14} color='#fff' />
-          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Kick</Text>
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+            Kick
+          </Text>
         </TouchableOpacity>
       )}
     </View>
@@ -201,12 +248,21 @@ function ActivityDetailSheet({
       .channel(`sheet-participants:${activity.id}:${Date.now()}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'participants', filter: `activity_id=eq.${activity.id}` },
-        () => { loadData() }
+        {
+          event: '*',
+          schema: 'public',
+          table: 'participants',
+          filter: `activity_id=eq.${activity.id}`,
+        },
+        () => {
+          loadData()
+        }
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [activity?.id, visible])
 
   const onJoin = async () => {
@@ -223,29 +279,47 @@ function ActivityDetailSheet({
       }
       const birth = new Date(myProfile.birthday)
       const today = new Date()
-      const age = today.getFullYear() - birth.getFullYear() -
+      const age =
+        today.getFullYear() -
+        birth.getFullYear() -
         (today.getMonth() < birth.getMonth() ||
-         (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate()) ? 1 : 0)
+        (today.getMonth() === birth.getMonth() &&
+          today.getDate() < birth.getDate())
+          ? 1
+          : 0)
       if (activity.min_age && age < activity.min_age) {
-        Alert.alert('Age Restriction', `You must be at least ${activity.min_age} years old to join this activity.`)
+        Alert.alert(
+          'Age Restriction',
+          `You must be at least ${activity.min_age} years old to join this activity.`
+        )
         return
       }
       if (activity.max_age && age > activity.max_age) {
-        Alert.alert('Age Restriction', `This activity is for participants up to ${activity.max_age} years old.`)
+        Alert.alert(
+          'Age Restriction',
+          `This activity is for participants up to ${activity.max_age} years old.`
+        )
         return
       }
     }
 
     setJoining(true)
     const result = await activityService.join(
-      activity.id, currentUserId, activity.is_public,
-      myProfile ? { username: myProfile.username, avatar_url: myProfile.avatar_url } : undefined,
+      activity.id,
+      currentUserId,
+      activity.is_public,
+      myProfile
+        ? { username: myProfile.username, avatar_url: myProfile.avatar_url }
+        : undefined,
       activity.host?.id,
       activity.title,
       activity.max_participants
     )
     setJoining(false)
-    if (result.error) { Alert.alert('Error', result.error.message); return }
+    if (result.error) {
+      Alert.alert('Error', result.error.message)
+      return
+    }
 
     if (result.waitlisted) {
       setMyStatus('waitlisted')
@@ -255,7 +329,8 @@ function ActivityDetailSheet({
       )
     } else {
       setMyStatus(activity.is_public ? 'joined' : 'pending')
-      if (!activity.is_public) Alert.alert('Request sent', 'The host will review your request.')
+      if (!activity.is_public)
+        Alert.alert('Request sent', 'The host will review your request.')
     }
   }
 
@@ -273,7 +348,10 @@ function ActivityDetailSheet({
           onPress: async () => {
             await activityService.leave(activity.id, currentUserId)
             setMyStatus(null)
-            if (!isWaitlisted) setParticipants((p) => p.filter((x) => x.user_id !== currentUserId))
+            if (!isWaitlisted)
+              setParticipants((p) =>
+                p.filter((x) => x.user_id !== currentUserId)
+              )
           },
         },
       ]
@@ -288,7 +366,11 @@ function ActivityDetailSheet({
         text: 'Kick',
         style: 'destructive',
         onPress: async () => {
-          await activityService.kickParticipant(activity.id, userId, activity.title)
+          await activityService.kickParticipant(
+            activity.id,
+            userId,
+            activity.title
+          )
           setParticipants((p) => p.filter((x) => x.user_id !== userId))
           setLiveCount((c) => Math.max(0, c - 1))
         },
@@ -298,18 +380,30 @@ function ActivityDetailSheet({
 
   if (!activity) return null
 
-  const isFull = activity.max_participants !== null && liveCount >= activity.max_participants
+  const isFull =
+    activity.max_participants !== null && liveCount >= activity.max_participants
 
   const joinLabel =
-    myStatus === 'kicked' ? 'Not allowed'
-    : myStatus === 'joined' || myStatus === 'approved' ? 'Leave'
-    : myStatus === 'pending' ? 'Request pending'
-    : myStatus === 'waitlisted' ? 'Leave Waitlist'
-    : isFull ? 'Join Waitlist'
-    : activity.is_public ? 'Join'
-    : 'Request to join'
+    myStatus === 'kicked'
+      ? 'Not allowed'
+      : myStatus === 'joined' || myStatus === 'approved'
+        ? 'Leave'
+        : myStatus === 'pending'
+          ? 'Request pending'
+          : myStatus === 'waitlisted'
+            ? 'Leave Waitlist'
+            : isFull
+              ? 'Join Waitlist'
+              : activity.is_public
+                ? 'Join'
+                : 'Request to join'
 
-  const joinVariant = (myStatus === 'joined' || myStatus === 'approved' || myStatus === 'waitlisted') ? 'danger' : 'primary'
+  const joinVariant =
+    myStatus === 'joined' ||
+    myStatus === 'approved' ||
+    myStatus === 'waitlisted'
+      ? 'danger'
+      : 'primary'
   const joinDisabled = myStatus === 'pending' || myStatus === 'kicked'
 
   return (
@@ -319,9 +413,14 @@ function ActivityDetailSheet({
       presentationStyle='pageSheet'
       onRequestClose={onClose}
     >
-      <SafeAreaView style={[styles.sheet, { backgroundColor: colors.background }]} edges={['top']}>
-        <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }} showsVerticalScrollIndicator={false}>
-
+      <SafeAreaView
+        style={[styles.sheet, { backgroundColor: colors.background }]}
+        edges={['top']}
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: spacing.xl }}
+          showsVerticalScrollIndicator={false}
+        >
           {/* ── Hero ── */}
           <View style={styles.hero}>
             {activity.cover_image_url ? (
@@ -331,8 +430,21 @@ function ActivityDetailSheet({
                 contentFit='cover'
               />
             ) : (
-              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                <Ionicons name='flame-outline' size={56} color={colors.textMuted} />
+              <View
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                ]}
+              >
+                <Ionicons
+                  name='flame-outline'
+                  size={56}
+                  color={colors.textMuted}
+                />
               </View>
             )}
 
@@ -350,42 +462,110 @@ function ActivityDetailSheet({
             />
 
             {/* Close button */}
-            <TouchableOpacity style={styles.heroClose} onPress={onClose} activeOpacity={0.8}>
-              <Ionicons name='close' size={20} color='#fff' />
+            <TouchableOpacity
+              style={styles.heroClose}
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Ionicons name='close' size={18} color='#fff' />
             </TouchableOpacity>
           </View>
 
           {/* ── Title block (below image) ── */}
           <View style={styles.sheetTitleBlock}>
             {/* Badges */}
-            {(!activity.is_public || (!!activity.price && activity.price > 0) || activity.min_age || activity.max_age) && (
+            {(!activity.is_public ||
+              (!!activity.price && activity.price > 0) ||
+              activity.min_age ||
+              activity.max_age) && (
               <View style={styles.badgeRow}>
                 {!activity.is_public && (
-                  <View style={[styles.badgePill, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}>
-                    <Ionicons name='lock-closed' size={12} color={colors.textMuted} />
-                    <Text style={[typography.caption, { color: colors.textMuted, fontWeight: '700' }]}>Private</Text>
+                  <View
+                    style={[
+                      styles.badgePill,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name='lock-closed'
+                      size={12}
+                      color={colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: colors.textMuted, fontWeight: '700' },
+                      ]}
+                    >
+                      Private
+                    </Text>
                   </View>
                 )}
                 {!!activity.price && activity.price > 0 && (
-                  <View style={[styles.badgePill, { backgroundColor: colors.primary + '18' }]}>
-                    <Ionicons name='cash-outline' size={12} color={colors.primary} />
-                    <Text style={[typography.caption, { color: colors.primary, fontWeight: '700' }]}>€{activity.price} at location</Text>
+                  <View
+                    style={[
+                      styles.badgePill,
+                      { backgroundColor: colors.primary + '18' },
+                    ]}
+                  >
+                    <Ionicons
+                      name='cash-outline'
+                      size={12}
+                      color={colors.primary}
+                    />
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: colors.primary, fontWeight: '700' },
+                      ]}
+                    >
+                      €{activity.price} at location
+                    </Text>
                   </View>
                 )}
                 {(activity.min_age || activity.max_age) && (
-                  <View style={[styles.badgePill, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}>
-                    <Ionicons name='person-outline' size={12} color={colors.textSecondary} />
-                    <Text style={[typography.caption, { color: colors.textSecondary, fontWeight: '600' }]}>
+                  <View
+                    style={[
+                      styles.badgePill,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name='person-outline'
+                      size={12}
+                      color={colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: colors.textSecondary, fontWeight: '600' },
+                      ]}
+                    >
                       {activity.min_age && activity.max_age
                         ? `Ages ${activity.min_age}–${activity.max_age}`
-                        : activity.min_age ? `${activity.min_age}+` : `Up to ${activity.max_age}`}
+                        : activity.min_age
+                          ? `${activity.min_age}+`
+                          : `Up to ${activity.max_age}`}
                     </Text>
                   </View>
                 )}
               </View>
             )}
 
-            <Text style={[styles.sheetTitle, { color: colors.text }]} numberOfLines={3}>{activity.title}</Text>
+            <Text
+              style={[styles.sheetTitle, { color: colors.text }]}
+              numberOfLines={3}
+            >
+              {activity.title}
+            </Text>
 
             {/* Host row */}
             <TouchableOpacity
@@ -393,20 +573,45 @@ function ActivityDetailSheet({
               onPress={() => activity.host?.id && onHostPress(activity.host.id)}
               activeOpacity={0.8}
             >
-              {activity.host?.avatar_url
-                ? <Image source={{ uri: activity.host.avatar_url }} style={styles.sheetHostAvatar} contentFit='cover' />
-                : <Ionicons name='person-circle-outline' size={26} color={colors.textMuted} />
-              }
-              <Text style={[typography.label, { color: colors.textSecondary, flex: 1 }]}>
-                @{activity.host?.username ?? '—'}{activity.host?.is_verified ? ' ✓' : ''}
+              {activity.host?.avatar_url ? (
+                <Image
+                  source={{ uri: activity.host.avatar_url }}
+                  style={styles.sheetHostAvatar}
+                  contentFit='cover'
+                />
+              ) : (
+                <Ionicons
+                  name='person-circle-outline'
+                  size={26}
+                  color={colors.textMuted}
+                />
+              )}
+              <Text
+                style={[
+                  typography.label,
+                  { color: colors.textSecondary, flex: 1 },
+                ]}
+              >
+                @{activity.host?.username ?? '—'}
+                {activity.host?.is_verified ? ' ✓' : ''}
               </Text>
               {!isHost && activity.host?.id && (
                 <TouchableOpacity
-                  style={[styles.sheetMsgBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
+                  style={[
+                    styles.sheetMsgBtn,
+                    {
+                      backgroundColor: colors.primary + '15',
+                      borderColor: colors.primary + '40',
+                    },
+                  ]}
                   onPress={() => onStartDM(activity.host!.id!)}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name='chatbubble-outline' size={14} color={colors.primary} />
+                  <Ionicons
+                    name='chatbubble-outline'
+                    size={14}
+                    color={colors.primary}
+                  />
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -414,53 +619,111 @@ function ActivityDetailSheet({
 
           {/* ── Body ── */}
           <View style={styles.sheetBody}>
-
-          {/* Description */}
-          {activity.description ? (
-            <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.md }]}>
-              {activity.description}
-            </Text>
-          ) : null}
-
-          {/* Meta grid */}
-          <View style={[styles.metaGrid, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.metaCell}>
-              <Ionicons name='calendar-outline' size={20} color={colors.primary} />
-              <Text style={[typography.label, { color: colors.text }]}>{formatDate(activity.date)}</Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>Date</Text>
-            </View>
-            <View style={[styles.metaCellDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.metaCell}>
-              <Ionicons name='time-outline' size={20} color={colors.primary} />
-              <Text style={[typography.label, { color: colors.text }]}>{formatTime(activity.start_time)}</Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>Start</Text>
-            </View>
-            <View style={[styles.metaCellDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.metaCell}>
-              <Ionicons name='hourglass-outline' size={20} color={colors.primary} />
-              <Text style={[typography.label, { color: colors.text }]}>{formatDuration(activity.duration_minutes)}</Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>Duration</Text>
-            </View>
-          </View>
-
-          {/* Participants — visible to everyone on public, or to host on private */}
-          {(activity.is_public || isHost) && (
-            <View style={styles.participantsSection}>
-              <Text style={[typography.label, { color: colors.text, marginBottom: spacing.sm }]}>
-                Participants ({liveCount}
-                {activity.max_participants ? `/${activity.max_participants}` : ''})
+            {/* Description */}
+            {activity.description ? (
+              <Text
+                style={[
+                  typography.body,
+                  { color: colors.textSecondary, marginBottom: spacing.md },
+                ]}
+              >
+                {activity.description}
               </Text>
-              {loading
-                ? <ActivityIndicator color={colors.primary} />
-                : participants.length === 0
-                  ? <Text style={[typography.caption, { color: colors.textMuted }]}>No participants yet</Text>
-                  : participants.map((p) => (
+            ) : null}
+
+            {/* Meta grid */}
+            <View
+              style={[
+                styles.metaGrid,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.metaCell}>
+                <Ionicons
+                  name='calendar-outline'
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[typography.label, { color: colors.text }]}>
+                  {formatDate(activity.date)}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  Date
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.metaCellDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+              <View style={styles.metaCell}>
+                <Ionicons
+                  name='time-outline'
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[typography.label, { color: colors.text }]}>
+                  {formatTime(activity.start_time)}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  Start
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.metaCellDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+              <View style={styles.metaCell}>
+                <Ionicons
+                  name='hourglass-outline'
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[typography.label, { color: colors.text }]}>
+                  {formatDuration(activity.duration_minutes)}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  Duration
+                </Text>
+              </View>
+            </View>
+
+            {/* Participants — visible to everyone on public, or to host on private */}
+            {(activity.is_public || isHost) && (
+              <View style={styles.participantsSection}>
+                <Text
+                  style={[
+                    typography.label,
+                    { color: colors.text, marginBottom: spacing.sm },
+                  ]}
+                >
+                  Participants ({liveCount}
+                  {activity.max_participants
+                    ? `/${activity.max_participants}`
+                    : ''}
+                  )
+                </Text>
+                {loading ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : participants.length === 0 ? (
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted }]}
+                  >
+                    No participants yet
+                  </Text>
+                ) : (
+                  participants.map((p) => (
                     <ParticipantRow
                       key={p.user_id}
                       p={p}
                       colors={colors}
                       isHost={isHost}
-                      onKick={() => onKickParticipant(p.user_id, p.profile?.username ?? '?')}
+                      onKick={() =>
+                        onKickParticipant(p.user_id, p.profile?.username ?? '?')
+                      }
                       onPress={() => {
                         if (!p.profile?.id) return
                         onClose()
@@ -468,23 +731,40 @@ function ActivityDetailSheet({
                           router.push(`/profile/${p.profile!.id}` as any)
                         )
                       }}
-                      onMessage={p.user_id !== currentUserId ? () => onStartDM(p.user_id) : undefined}
+                      onMessage={
+                        p.user_id !== currentUserId
+                          ? () => onStartDM(p.user_id)
+                          : undefined
+                      }
                     />
                   ))
-              }
-            </View>
-          )}
-          </View>{/* end sheetBody */}
+                )}
+              </View>
+            )}
+          </View>
+          {/* end sheetBody */}
         </ScrollView>
 
         {/* Join/Leave CTA */}
-        <View style={[styles.sheetCta, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.sheetCta,
+            {
+              borderTopColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
           <Button
             title={joinLabel}
             variant={joinVariant}
             loading={joining}
             disabled={joinDisabled}
-            onPress={myStatus === 'joined' || myStatus === 'approved' ? onLeave : onJoin}
+            onPress={
+              myStatus === 'joined' || myStatus === 'approved'
+                ? onLeave
+                : onJoin
+            }
           />
         </View>
       </SafeAreaView>
@@ -516,11 +796,17 @@ export default function MapScreen() {
       const idx = group.indexOf(i)
       const angle = (2 * Math.PI * idx) / group.length
       const r = 0.00035
-      return { ...a, latitude: a.latitude + r * Math.cos(angle), longitude: a.longitude + r * Math.sin(angle) }
+      return {
+        ...a,
+        latitude: a.latitude + r * Math.cos(angle),
+        longitude: a.longitude + r * Math.sin(angle),
+      }
     })
   }, [activities])
 
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null)
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
+    null
+  )
   const [detailVisible, setDetailVisible] = useState(false)
   const [mapCenter, setMapCenter] = useState({ lat: 48.1351, lng: 11.582 })
   const [refreshing, setRefreshing] = useState(false)
@@ -535,32 +821,54 @@ export default function MapScreen() {
     ;(async () => {
       const { status } = await Location.requestForegroundPermissionsAsync()
       if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-        mapRef.current?.animateToRegion({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          latitudeDelta: 0.06,
-          longitudeDelta: 0.06,
-        }, 800)
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        })
+        mapRef.current?.animateToRegion(
+          {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            latitudeDelta: 0.06,
+            longitudeDelta: 0.06,
+          },
+          800
+        )
         setMapCenter({ lat: loc.coords.latitude, lng: loc.coords.longitude })
       }
     })()
     loadActivities()
   }, [loadActivities])
 
-  // Refresh on tab focus
-  useFocusEffect(useCallback(() => { loadActivities() }, [loadActivities]))
+  // Refresh on tab focus and on repeated tab press
+  useFocusEffect(
+    useCallback(() => {
+      loadActivities()
+    }, [loadActivities])
+  )
+  const navigation = useNavigation()
+  useEffect(() => {
+    const unsub = navigation.addListener('tabPress' as any, () => {
+      loadActivities()
+    })
+    return unsub
+  }, [navigation, loadActivities])
 
   // Realtime — new/cancelled/updated activities appear on map instantly
   useEffect(() => {
     if (!user) return
     const channel = supabase
       .channel(`map-activities:${user.id}:${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
-        loadActivities()
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'activities' },
+        () => {
+          loadActivities()
+        }
+      )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [user?.id])
 
   const onMarkerPress = (activity: Activity) => {
@@ -580,19 +888,29 @@ export default function MapScreen() {
   }
 
   const onCreatePress = () => {
-    router.push(`/activity/create?lat=${mapCenter.lat}&lng=${mapCenter.lng}` as any)
+    router.push(
+      `/activity/create?lat=${mapCenter.lat}&lng=${mapCenter.lng}` as any
+    )
   }
 
   const onHostPress = (hostId: string) => {
     setDetailVisible(false)
-    InteractionManager.runAfterInteractions(() => router.push(`/profile/${hostId}` as any))
+    InteractionManager.runAfterInteractions(() =>
+      router.push(`/profile/${hostId}` as any)
+    )
   }
 
   const onStartDM = async (targetId: string) => {
     if (!user) return
     setDetailVisible(false)
-    const { data: convId } = await chatService.getOrCreateConversation(user.id, targetId)
-    if (convId) InteractionManager.runAfterInteractions(() => router.push(`/chat/${convId}` as any))
+    const { data: convId } = await chatService.getOrCreateConversation(
+      user.id,
+      targetId
+    )
+    if (convId)
+      InteractionManager.runAfterInteractions(() =>
+        router.push(`/chat/${convId}` as any)
+      )
   }
 
   return (
@@ -601,7 +919,12 @@ export default function MapScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_DEFAULT}
-        initialRegion={{ latitude: 48.1351, longitude: 11.582, latitudeDelta: 0.08, longitudeDelta: 0.08 }}
+        initialRegion={{
+          latitude: 48.1351,
+          longitude: 11.582,
+          latitudeDelta: 0.08,
+          longitudeDelta: 0.08,
+        }}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
@@ -617,27 +940,13 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {/* Refresh button — top right */}
-      <TouchableOpacity
-        style={[styles.refreshBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        onPress={onRefreshPress}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name='refresh'
-          size={18}
-          color={colors.primary}
-          style={refreshing ? { opacity: 0.4 } : undefined}
-        />
-      </TouchableOpacity>
-
       {/* FAB — create activity */}
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={onCreatePress}
         activeOpacity={0.85}
       >
-        <Ionicons name='add' size={28} color={colors.white} />
+        <Ionicons name='add' size={26} color='#fff' />
       </TouchableOpacity>
 
       <ActivityDetailSheet
@@ -704,34 +1013,18 @@ const mStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  refreshBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 56 : 16,
-    right: spacing.md,
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   fab: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 108 : 92,
     right: spacing.md,
-    width: 56,
-    height: 56,
+    width: 52,
+    height: 52,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6C63FF',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -744,7 +1037,7 @@ const styles = StyleSheet.create({
   heroClose: {
     position: 'absolute',
     top: spacing.md,
-    left: spacing.md,
+    right: spacing.md,
     width: 36,
     height: 36,
     borderRadius: 18,

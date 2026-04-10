@@ -281,6 +281,7 @@ export default function SearchScreen() {
   const [activities, setActivities] = useState<ActivityResult[]>([])
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [searchFocused, setSearchFocused] = useState(false)
   const inputRef = useRef<TextInput>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -330,11 +331,11 @@ export default function SearchScreen() {
   }, [tab, users, activities])
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       {/* ── Search bar ── */}
-      <View style={[styles.searchRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Ionicons name='search' size={16} color={colors.textMuted} />
+      <View style={[styles.searchRow, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+        <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
+          <Ionicons name='search' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
           <TextInput
             ref={inputRef}
             style={[styles.searchInput, { color: colors.text }]}
@@ -342,6 +343,8 @@ export default function SearchScreen() {
             placeholderTextColor={colors.textMuted}
             value={query}
             onChangeText={onQueryChange}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             autoCapitalize='none'
             returnKeyType='search'
           />
@@ -354,7 +357,7 @@ export default function SearchScreen() {
       </View>
 
       {/* ── Tab switcher ── */}
-      <View style={[styles.tabRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      <View style={[styles.tabRow, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         {(['people', 'activities'] as Tab[]).map((t) => (
           <TouchableOpacity
             key={t}
@@ -456,8 +459,10 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    ...typography.body,
-    paddingVertical: 0,
+    fontSize: 16,
+    padding: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   tabRow: {
     flexDirection: 'row',

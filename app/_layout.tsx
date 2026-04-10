@@ -13,6 +13,7 @@ import { UnreadProvider } from '../src/context/UnreadContext'
 import { View, ActivityIndicator } from 'react-native'
 import { colors } from '../src/constants/theme'
 import { useColorScheme } from '../src/hooks/use-color-scheme'
+import { ThemeProvider, useTheme } from '../src/context/ThemeContext'
 
 function RouteGuard() {
   const { session, loading: authLoading, isPasswordRecovery } = useAuth()
@@ -45,7 +46,7 @@ function RouteGuard() {
     }
   }, [session, authLoading, isOnboardingComplete, isPasswordRecovery, segments])
 
-  if (authLoading) {
+  if (authLoading || (session && isOnboardingComplete === null)) {
     return (
       <View
         style={{
@@ -64,7 +65,7 @@ function RouteGuard() {
 }
 
 function AppLayout() {
-  const scheme = useColorScheme()
+  const { resolved } = useTheme()
   return (
     <>
       <RouteGuard />
@@ -81,7 +82,7 @@ function AppLayout() {
         <Stack.Screen name='settings' />
         <Stack.Screen name='notifications' />
       </Stack>
-      <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
+      <StatusBar style={resolved === 'light' ? 'dark' : 'light'} />
     </>
   )
 }
@@ -89,15 +90,17 @@ function AppLayout() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <OnboardingProvider>
-          <ProfileProvider>
-            <UnreadProvider>
-              <AppLayout />
-            </UnreadProvider>
-          </ProfileProvider>
-        </OnboardingProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <OnboardingProvider>
+            <ProfileProvider>
+              <UnreadProvider>
+                <AppLayout />
+              </UnreadProvider>
+            </ProfileProvider>
+          </OnboardingProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </GestureHandlerRootView>
   )
 }

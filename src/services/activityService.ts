@@ -104,7 +104,7 @@ export const activityService = {
   async getParticipants(activityId: string): Promise<{ data: Participant[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('participants')
-      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url)')
+      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url, is_verified)')
       .eq('activity_id', activityId)
       .in('status', ['approved', 'joined'])
       .order('created_at', { ascending: true })
@@ -114,7 +114,7 @@ export const activityService = {
   async getPendingParticipants(activityId: string): Promise<{ data: Participant[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('participants')
-      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url)')
+      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url, is_verified)')
       .eq('activity_id', activityId)
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
@@ -348,7 +348,7 @@ export const activityService = {
   async getWaitlist(activityId: string): Promise<{ data: Participant[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('participants')
-      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url)')
+      .select('*, profile:profiles!participants_user_id_fkey(id, username, avatar_url, is_verified)')
       .eq('activity_id', activityId)
       .eq('status', 'waitlisted')
       .order('created_at', { ascending: true })

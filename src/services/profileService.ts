@@ -31,12 +31,15 @@ export const profileService = {
     const { url, error } = await imageService.uploadImage('avatars', filePath, base64)
     if (error || !url) return { url: null, error: error as Error | null }
 
+    // Append cache-buster so expo-image doesn't serve the stale cached version
+    const urlWithBust = `${url}?t=${Date.now()}`
+
     const { error: dbError } = await supabase
       .from('profiles')
-      .update({ avatar_url: url, updated_at: new Date().toISOString() })
+      .update({ avatar_url: urlWithBust, updated_at: new Date().toISOString() })
       .eq('id', userId)
 
-    return { url, error: dbError as Error | null }
+    return { url: urlWithBust, error: dbError as Error | null }
   },
 
   async getStats(userId: string): Promise<{ data: ProfileStats; error: Error | null }> {

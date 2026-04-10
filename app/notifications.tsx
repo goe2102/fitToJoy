@@ -154,17 +154,16 @@ export default function NotificationsScreen() {
   ]
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.backBtn}>
           <Ionicons name='chevron-back' size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[typography.h2, { color: colors.text }]}>Notifications</Text>
-        <View style={{ width: 40 }} />
       </View>
 
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1 }}>
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
       ) : isEmpty ? (
@@ -283,8 +282,8 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  backBtn: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   card: { borderRadius: radius.lg, borderWidth: 1, borderLeftWidth: 4, overflow: 'hidden', padding: spacing.md, gap: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },

@@ -386,13 +386,10 @@ export default function CreateActivityScreen() {
           },
         ]}
       >
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name='close' size={24} color={colors.text} />
+        <Text style={[typography.h3, { color: colors.text }]}>New Activity</Text>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={[styles.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
+          <Ionicons name='close' size={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={[typography.h3, { color: colors.text }]}>
-          New Activity
-        </Text>
-        <View style={{ width: 32 }} />
       </View>
 
       {/* ── Scrollable form ── */}
@@ -921,9 +918,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    borderBottomWidth: 1,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scroll: {
     padding: spacing.md,
