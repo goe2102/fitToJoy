@@ -12,23 +12,39 @@ function orderedPair(a: string, b: string): [string, string] {
 
 export const chatService = {
   async getConversations(userId: string): Promise<{ data: Conversation[]; error: Error | null }> {
-    const { data, error } = await supabase
-      .from('conversations')
-      .select(`
-        *,
-        participant_1_profile:profiles!conversations_participant_1_fkey(id, username, avatar_url, is_verified),
-        participant_2_profile:profiles!conversations_participant_2_fkey(id, username, avatar_url, is_verified),
-        last_message:messages(content, sender_id, created_at, read)
-      `)
-      .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
-      .order('last_message_at', { ascending: false, nullsFirst: false })
+    const [convsRes, unreadRes, muteRes] = await Promise.all([
+      supabase
+        .from('conversations')
+        .select(`
+          *,
+          participant_1_profile:profiles!conversations_participant_1_fkey(id, username, avatar_url, is_verified),
+          participant_2_profile:profiles!conversations_participant_2_fkey(id, username, avatar_url, is_verified),
+          last_message:messages(content, sender_id, created_at, read)
+        `)
+        .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+        .order('last_message_at', { ascending: false, nullsFirst: false }),
+      supabase
+        .from('messages')
+        .select('conversation_id')
+        .eq('read', false)
+        .neq('sender_id', userId),
+      supabase
+        .from('conversation_mutes')
+        .select('conversation_id')
+        .eq('user_id', userId),
+    ])
 
-    if (error) return { data: [], error }
+    if (convsRes.error) return { data: [], error: convsRes.error }
 
-    // Attach the "other" profile and unread count
-    const mapped = (data ?? []).map((c: any) => {
+    const unreadMap: Record<string, number> = {}
+    for (const msg of unreadRes.data ?? []) {
+      unreadMap[msg.conversation_id] = (unreadMap[msg.conversation_id] ?? 0) + 1
+    }
+
+    const mutedSet = new Set((muteRes.data ?? []).map((m: any) => m.conversation_id))
+
+    const mapped = (convsRes.data ?? []).map((c: any) => {
       const other = c.participant_1 === userId ? c.participant_2_profile : c.participant_1_profile
-      // last_message is an array from the join — take the most recent
       const lastMsg = c.last_message?.sort((a: any, b: any) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )?.[0] ?? null
@@ -36,28 +52,23 @@ export const chatService = {
         ...c,
         other_profile: other,
         last_message: lastMsg,
+        unread_count: unreadMap[c.id] ?? 0,
+        muted: mutedSet.has(c.id),
       }
     })
 
     return { data: mapped, error: null }
   },
 
-  async getUnreadMessageCount(userId: string): Promise<number> {
-    const { count } = await supabase
+  /** Number of conversations that have at least 1 unread message — used for tab badge. */
+  async getUnreadConversationCount(userId: string): Promise<number> {
+    const { data } = await supabase
       .from('messages')
-      .select('id', { count: 'exact', head: true })
+      .select('conversation_id')
       .eq('read', false)
       .neq('sender_id', userId)
-      .in(
-        'conversation_id',
-        (
-          await supabase
-            .from('conversations')
-            .select('id')
-            .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
-        ).data?.map((c) => c.id) ?? []
-      )
-    return count ?? 0
+    if (!data?.length) return 0
+    return new Set(data.map((m) => m.conversation_id)).size
   },
 
   async getOrCreateConversation(userId: string, otherUserId: string): Promise<{ data: string | null; error: Error | null }> {
@@ -108,6 +119,28 @@ export const chatService = {
       .eq('conversation_id', conversationId)
       .eq('read', false)
       .neq('sender_id', userId)
+  },
+
+  async setConversationMuted(conversationId: string, userId: string, muted: boolean) {
+    if (muted) {
+      await supabase
+        .from('conversation_mutes')
+        .upsert({ conversation_id: conversationId, user_id: userId })
+    } else {
+      await supabase
+        .from('conversation_mutes')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId)
+    }
+  },
+
+  async deleteConversation(conversationId: string): Promise<{ error: Error | null }> {
+    const { error } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId)
+    return { error }
   },
 
   subscribeToMessages(conversationId: string, onMessage: (msg: Message) => void) {

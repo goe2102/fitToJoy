@@ -24,7 +24,10 @@ export const followService = {
     const status = targetIsPrivate ? 'pending' : 'accepted'
     const { error } = await supabase
       .from('follows')
-      .insert({ follower_id: followerId, following_id: followingId, status })
+      .upsert(
+        { follower_id: followerId, following_id: followingId, status },
+        { onConflict: 'follower_id,following_id' }
+      )
 
     if (!error && fromProfile) {
       const type = targetIsPrivate ? 'follow_request' : 'follow_accepted'

@@ -1,159 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import FollowListModal from '../../components/FollowListModal'
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Modal,
-  Switch,
   Alert,
   ActivityIndicator,
   RefreshControl,
-  Animated,
-  Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { useColors } from '@/hooks/useColors'
-import { useProfile } from '@/context/ProfileContext'
 import { useAuth } from '@/context/AuthContext'
+import { useProfile } from '@/context/ProfileContext'
 import { profileService } from '@/services/profileService'
-import { followService } from '@/services/followService'
-import { imageService } from '@/services/imageService'
-import { usePendingRequests } from '@/hooks/usePendingRequests'
-import { Input, Button, Badge } from '@/components/ui'
+import { activityService } from '@/services/activityService'
+import { supabase } from '../../lib/supabase'
+import { Badge } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
-import type { Activity, Follow, Profile } from '@/types'
-
-// ─── Follow Requests Modal ────────────────────────────────────────────────────
-
-type RequestWithFollower = Follow & { follower: Pick<Profile, 'id' | 'username' | 'avatar_url'> }
-
-function FollowRequestsModal({
-  visible,
-  onClose,
-  onCountChange,
-  currentUserId,
-  colors,
-}: {
-  visible: boolean
-  onClose: () => void
-  onCountChange: () => void
-  currentUserId: string
-  colors: AppColors
-}) {
-  const { profile: myProfile } = useProfile()
-  const [requests, setRequests] = useState<RequestWithFollower[]>([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!visible) return
-    ;(async () => {
-      setLoading(true)
-      const { data } = await followService.getPendingRequests(currentUserId)
-      setRequests(data as RequestWithFollower[])
-      setLoading(false)
-    })()
-  }, [visible, currentUserId])
-
-  const onAccept = async (followerId: string) => {
-    await followService.acceptRequest(followerId, currentUserId, myProfile
-      ? { username: myProfile.username, avatar_url: myProfile.avatar_url }
-      : undefined
-    )
-    setRequests((r) => r.filter((x) => x.follower_id !== followerId))
-    onCountChange()
-  }
-
-  const onDecline = async (followerId: string) => {
-    await followService.rejectRequest(followerId, currentUserId)
-    setRequests((r) => r.filter((x) => x.follower_id !== followerId))
-    onCountChange()
-  }
-
-  return (
-    <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
-      <SafeAreaView style={[{ flex: 1 }, { backgroundColor: colors.background }]} edges={['top']}>
-        <View style={[reqStyles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name='close' size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[typography.h3, { color: colors.text }]}>Follow Requests</Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        {loading
-          ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
-          : requests.length === 0
-            ? (
-              <View style={reqStyles.empty}>
-                <Ionicons name='people-outline' size={40} color={colors.textMuted} />
-                <Text style={[typography.bodySmall, { color: colors.textMuted, marginTop: spacing.sm }]}>
-                  No pending requests
-                </Text>
-              </View>
-            )
-            : requests.map((r) => (
-              <View key={r.follower_id} style={[reqStyles.row, { borderBottomColor: colors.border }]}>
-                {r.follower?.avatar_url
-                  ? <Image source={{ uri: r.follower.avatar_url }} style={reqStyles.avatar} contentFit='cover' />
-                  : (
-                    <View style={[reqStyles.avatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Ionicons name='person' size={18} color={colors.textMuted} />
-                    </View>
-                  )
-                }
-                <Text style={[typography.label, { color: colors.text, flex: 1 }]}>
-                  @{r.follower?.username ?? '—'}
-                </Text>
-                <TouchableOpacity
-                  style={[reqStyles.actionBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => onAccept(r.follower_id)}
-                >
-                  <Text style={[typography.label, { color: colors.white, fontSize: 13 }]}>Accept</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[reqStyles.actionBtn, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}
-                  onPress={() => onDecline(r.follower_id)}
-                >
-                  <Text style={[typography.label, { color: colors.textSecondary, fontSize: 13 }]}>Decline</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-        }
-      </SafeAreaView>
-    </Modal>
-  )
-}
-
-const reqStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-  },
-  empty: { alignItems: 'center', justifyContent: 'center', flex: 1 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-  },
-  avatar: { width: 44, height: 44, borderRadius: 22 },
-  actionBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radius.full,
-  },
-})
+import type { Activity } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -181,22 +51,34 @@ function formatDuration(minutes: number) {
 function ActivityCard({
   activity,
   colors,
-  onPress,
+  variant,
+  onDelete,
+  openSwipeRef,
 }: {
   activity: Activity
   colors: AppColors
-  onPress: () => void
+  variant: 'hosting' | 'joined'
+  onDelete?: () => void
+  openSwipeRef: React.MutableRefObject<Swipeable | null>
 }) {
-  const styles = useMemo(() => makeActivityCardStyles(colors), [colors])
+  const cardStyles = useMemo(() => makeActivityCardStyles(colors), [colors])
+  const swipeRef = useRef<Swipeable>(null)
   const spotsLeft =
     activity.max_participants !== null
       ? activity.max_participants - (activity.participant_count ?? 0)
       : null
 
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
+  const cardContent = (
+    <TouchableOpacity
+      style={cardStyles.card}
+      onPress={() => {
+        openSwipeRef.current?.close()
+        router.push(`/activity/${activity.id}` as any)
+      }}
+      activeOpacity={0.75}
+    >
+      <View style={cardStyles.cardHeader}>
+        <Text style={cardStyles.cardTitle} numberOfLines={1}>
           {activity.title}
         </Text>
         <Badge
@@ -204,21 +86,20 @@ function ActivityCard({
           variant={activity.is_public ? 'primary' : 'neutral'}
         />
       </View>
-
-      <View style={styles.cardMeta}>
-        <View style={styles.metaItem}>
+      <View style={cardStyles.cardMeta}>
+        <View style={cardStyles.metaItem}>
           <Ionicons name='calendar-outline' size={13} color={colors.textMuted} />
-          <Text style={styles.metaText}>
+          <Text style={cardStyles.metaText}>
             {formatDate(activity.date)} · {formatTime(activity.start_time)}
           </Text>
         </View>
-        <View style={styles.metaItem}>
+        <View style={cardStyles.metaItem}>
           <Ionicons name='time-outline' size={13} color={colors.textMuted} />
-          <Text style={styles.metaText}>{formatDuration(activity.duration_minutes)}</Text>
+          <Text style={cardStyles.metaText}>{formatDuration(activity.duration_minutes)}</Text>
         </View>
-        <View style={styles.metaItem}>
+        <View style={cardStyles.metaItem}>
           <Ionicons name='people-outline' size={13} color={colors.textMuted} />
-          <Text style={styles.metaText}>
+          <Text style={cardStyles.metaText}>
             {activity.participant_count ?? 0}
             {activity.max_participants !== null ? `/${activity.max_participants}` : ''} joined
             {spotsLeft !== null && spotsLeft <= 3 && spotsLeft > 0
@@ -226,8 +107,42 @@ function ActivityCard({
               : ''}
           </Text>
         </View>
+        {variant === 'joined' && activity.host && (
+          <View style={cardStyles.metaItem}>
+            <Ionicons name='person-outline' size={13} color={colors.textMuted} />
+            <Text style={cardStyles.metaText}>Host: @{(activity.host as any).username}</Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
+  )
+
+  if (variant !== 'hosting' || !onDelete) return cardContent
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={() => (
+        <TouchableOpacity
+          style={cardStyles.deleteAction}
+          onPress={() => { swipeRef.current?.close(); onDelete() }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name='trash-outline' size={22} color='#fff' />
+          <Text style={cardStyles.deleteActionText}>Delete</Text>
+        </TouchableOpacity>
+      )}
+      overshootRight={false}
+      onSwipeableOpen={() => {
+        if (openSwipeRef.current !== swipeRef.current) openSwipeRef.current?.close()
+        openSwipeRef.current = swipeRef.current
+      }}
+      onSwipeableClose={() => {
+        if (openSwipeRef.current === swipeRef.current) openSwipeRef.current = null
+      }}
+    >
+      {cardContent}
+    </Swipeable>
   )
 }
 
@@ -256,6 +171,21 @@ function makeActivityCardStyles(colors: AppColors) {
     cardMeta: { gap: 5 },
     metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     metaText: { ...typography.caption, color: colors.textMuted },
+    deleteAction: {
+      backgroundColor: colors.error,
+      borderRadius: radius.lg,
+      marginBottom: spacing.sm,
+      marginLeft: spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.lg,
+      gap: 4,
+    },
+    deleteActionText: {
+      ...typography.caption,
+      color: '#fff',
+      fontWeight: '700',
+    },
   })
 }
 
@@ -289,199 +219,80 @@ function makeStatStyles(colors: AppColors) {
   })
 }
 
-// ─── Edit Profile Modal ───────────────────────────────────────────────────────
-
-function EditProfileModal({
-  visible,
-  onClose,
-  colors,
-}: {
-  visible: boolean
-  onClose: () => void
-  colors: AppColors
-}) {
-  const { profile, updateProfile, updateAvatar } = useProfile()
-  const { user } = useAuth()
-  const styles = useMemo(() => makeEditStyles(colors), [colors])
-
-  const [username, setUsername] = useState(profile?.username ?? '')
-  const [bio, setBio] = useState(profile?.bio ?? '')
-  const [usernameState, setUsernameState] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
-  const [saving, setSaving] = useState(false)
-  const [avatarSaving, setAvatarSaving] = useState(false)
-  const checkRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (visible) {
-      setUsername(profile?.username ?? '')
-      setBio(profile?.bio ?? '')
-      setUsernameState('idle')
-    }
-  }, [visible])
-
-  const onUsernameChange = (val: string) => {
-    setUsername(val)
-    if (val === profile?.username) { setUsernameState('idle'); return }
-    if (val.length < 3) { setUsernameState('invalid'); return }
-    setUsernameState('checking')
-    if (checkRef.current) clearTimeout(checkRef.current)
-    checkRef.current = setTimeout(async () => {
-      const available = await profileService.checkUsernameAvailable(val, user!.id)
-      setUsernameState(available ? 'available' : 'taken')
-    }, 500)
-  }
-
-  const onPickAvatar = async () => {
-    const result = await imageService.pickImage([1, 1])
-    if (!result?.base64) return
-    setAvatarSaving(true)
-    await updateAvatar(result.base64)
-    setAvatarSaving(false)
-  }
-
-  const onSave = async () => {
-    if (usernameState === 'taken' || usernameState === 'invalid') return
-    setSaving(true)
-    const updates: any = { bio: bio.trim() || null }
-    if (username !== profile?.username) updates.username = username.trim()
-    const { error } = await updateProfile(updates)
-    setSaving(false)
-    if (error) { Alert.alert('Error', error.message); return }
-    onClose()
-  }
-
-  const usernameHint =
-    usernameState === 'checking' ? 'Checking…'
-    : usernameState === 'available' ? '✓ Available'
-    : usernameState === 'taken' ? 'Username taken'
-    : usernameState === 'invalid' ? 'Min. 3 characters'
-    : undefined
-
-  const usernameError = usernameState === 'taken' || usernameState === 'invalid' ? usernameHint : undefined
-
-  return (
-    <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
-      <SafeAreaView style={[styles.modal, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={[typography.body, { color: colors.textSecondary }]}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={[typography.label, { color: colors.text }]}>Edit Profile</Text>
-          <TouchableOpacity onPress={onSave} disabled={saving}>
-            {saving
-              ? <ActivityIndicator size='small' color={colors.primary} />
-              : <Text style={[typography.label, { color: colors.primary }]}>Save</Text>
-            }
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps='handled'>
-          {/* Avatar picker */}
-          <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={onPickAvatar} disabled={avatarSaving} activeOpacity={0.8}>
-              {avatarSaving
-                ? (
-                  <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                    <ActivityIndicator color={colors.primary} />
-                  </View>
-                )
-                : profile?.avatar_url
-                  ? <Image source={{ uri: profile.avatar_url }} style={styles.avatarCircle} contentFit='cover' />
-                  : (
-                    <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Ionicons name='person' size={36} color={colors.textMuted} />
-                    </View>
-                  )
-              }
-              <View style={[styles.avatarBadge, { backgroundColor: colors.primary }]}>
-                <Ionicons name='camera' size={13} color={colors.white} />
-              </View>
-            </TouchableOpacity>
-            <Text style={[typography.caption, { color: colors.textMuted, marginTop: spacing.sm }]}>
-              Tap to change photo
-            </Text>
-          </View>
-
-          <Input
-            label='Username'
-            value={username}
-            onChangeText={onUsernameChange}
-            autoCapitalize='none'
-            error={usernameError}
-            hint={!usernameError ? usernameHint : undefined}
-          />
-          <View style={{ height: spacing.md }} />
-          <Input
-            label='Bio'
-            value={bio}
-            onChangeText={setBio}
-            placeholder='Tell people about yourself…'
-            multiline
-            numberOfLines={3}
-          />
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  )
-}
-
-function makeEditStyles(colors: AppColors) {
-  return StyleSheet.create({
-    modal: { flex: 1 },
-    modalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    modalBody: { padding: spacing.md, gap: 0 },
-    avatarSection: { alignItems: 'center', marginBottom: spacing.xl },
-    avatarCircle: { width: 90, height: 90, borderRadius: 45 },
-    avatarBadge: {
-      position: 'absolute',
-      bottom: 0,
-      right: 0,
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor: colors.background,
-    },
-  })
-}
-
 // ─── Main Profile Screen ──────────────────────────────────────────────────────
+
+type ActivityTab = 'hosting' | 'joined'
 
 export default function ProfileScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { profile, stats, loading, refreshProfile, updateProfile } = useProfile()
-  const { signOut } = useAuth()
+  const { user } = useAuth()
+  const { profile, stats, loading, refreshProfile } = useProfile()
 
-  const { count: requestCount, refresh: refreshRequestCount } = usePendingRequests()
-
-  const [activities, setActivities] = useState<Activity[]>([])
+  const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
+  const [activeTab, setActiveTab] = useState<ActivityTab>('hosting')
+  const [hostingActivities, setHostingActivities] = useState<Activity[]>([])
+  const [joinedActivities, setJoinedActivities] = useState<Activity[]>([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [editVisible, setEditVisible] = useState(false)
-  const [settingsVisible, setSettingsVisible] = useState(false)
-  const [requestsVisible, setRequestsVisible] = useState(false)
+  const openSwipeRef = useRef<Swipeable | null>(null)
 
   const loadActivities = useCallback(async () => {
     if (!profile) return
     setActivitiesLoading(true)
-    const { data } = await profileService.getUserActivities(profile.id)
-    setActivities(data)
+    const [{ data: hosting }, { data: joined }] = await Promise.all([
+      profileService.getUserActivities(profile.id),
+      profileService.getJoinedActivities(profile.id),
+    ])
+    setHostingActivities(hosting)
+    setJoinedActivities(joined)
     setActivitiesLoading(false)
   }, [profile?.id])
 
   useEffect(() => { loadActivities() }, [loadActivities])
+
+  // Realtime: participant count changes + new/cancelled activities + follow counts
+  useEffect(() => {
+    if (!profile?.id) return
+
+    const channel = supabase
+      .channel(`profile-live:${profile.id}:${Date.now()}`)
+      // Participant joins/leaves → refresh activity participant counts
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' },
+        () => loadActivities()
+      )
+      // Activities created or cancelled by this user
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'activities', filter: `host_id=eq.${profile.id}` },
+        () => loadActivities()
+      )
+      // Follow count changes
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'follows' },
+        () => refreshProfile()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [profile?.id])
+
+  const onDeleteActivity = useCallback(async (activity: Activity) => {
+    const count = activity.participant_count ?? 0
+    const msg = count > 0
+      ? `This will cancel the activity and notify ${count} participant${count === 1 ? '' : 's'}.`
+      : 'This will permanently delete the activity.'
+    Alert.alert('Delete Activity', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await activityService.cancelActivity(activity.id)
+          setHostingActivities((prev) => prev.filter((a) => a.id !== activity.id))
+        },
+      },
+    ])
+  }, [])
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -489,36 +300,36 @@ export default function ProfileScreen() {
     setRefreshing(false)
   }
 
-  const onTogglePrivacy = async (val: boolean) => {
-    await updateProfile({ is_private: val })
-    if (val) {
-      Alert.alert(
-        'Account set to private',
-        'Your activities are now only visible to your followers.'
-      )
-    }
-  }
-
-  const onSignOut = () => {
-    Alert.alert('Sign out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOut },
-    ])
-  }
+  const displayedActivities = activeTab === 'hosting' ? hostingActivities : joinedActivities
 
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size='large' />
-      </View>
+      <SafeAreaView style={[styles.safe]} edges={['top']}>
+        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+          <Text style={styles.screenTitle}>Profile</Text>
+        </View>
+        <View style={[styles.centered, { flex: 1, backgroundColor: colors.background }]}>
+          <ActivityIndicator color={colors.primary} size='large' />
+        </View>
+      </SafeAreaView>
     )
   }
 
   return (
     <SafeAreaView style={[styles.safe]} edges={['top']}>
+      {/* ── Header ── */}
+      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+        <Text style={styles.screenTitle}>Profile</Text>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings' as any)}>
+          <Ionicons name='settings-outline' size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
+        onScrollBeginDrag={() => openSwipeRef.current?.close()}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -527,16 +338,6 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* ── Top bar ── */}
-        <View style={styles.topBar}>
-          <Text style={styles.screenTitle}>Profile</Text>
-          <View style={styles.topBarActions}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setSettingsVisible(true)}>
-              <Ionicons name='settings-outline' size={22} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* ── Avatar + identity ── */}
         <View style={styles.identitySection}>
           <View style={styles.avatarWrapper}>
@@ -565,148 +366,90 @@ export default function ProfileScreen() {
           {profile?.bio
             ? <Text style={styles.bio}>{profile.bio}</Text>
             : (
-              <TouchableOpacity onPress={() => setEditVisible(true)}>
+              <TouchableOpacity onPress={() => router.push('/settings' as any)}>
                 <Text style={[typography.bodySmall, { color: colors.textMuted, marginTop: 4 }]}>
                   + Add a bio
                 </Text>
               </TouchableOpacity>
             )
           }
-
-          <Button
-            title='Edit Profile'
-            variant='outline'
-            size='sm'
-            fullWidth={false}
-            style={{ marginTop: spacing.md }}
-            onPress={() => setEditVisible(true)}
-          />
         </View>
 
         {/* ── Stats ── */}
         <View style={[styles.statsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <StatPill label='Followers' value={stats.follower_count} colors={colors} />
+          <StatPill label='Followers' value={stats.follower_count} colors={colors} onPress={() => setFollowModal('followers')} />
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <StatPill label='Following' value={stats.following_count} colors={colors} />
+          <StatPill label='Following' value={stats.following_count} colors={colors} onPress={() => setFollowModal('following')} />
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <StatPill label='Activities' value={stats.activity_count} colors={colors} />
         </View>
 
-        {/* ── Follow Requests ── */}
-        {requestCount > 0 && (
-          <TouchableOpacity
-            style={[styles.settingRow, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40', marginBottom: spacing.md }]}
-            onPress={() => setRequestsVisible(true)}
-            activeOpacity={0.75}
-          >
-            <View style={styles.settingLeft}>
-              <Ionicons name='person-add-outline' size={20} color={colors.primary} />
-              <Text style={[typography.label, { color: colors.primary }]}>
-                {requestCount} follow request{requestCount !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <Ionicons name='chevron-forward' size={18} color={colors.primary} />
-          </TouchableOpacity>
-        )}
-
-        {/* ── Privacy toggle ── */}
-        <View style={[styles.settingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={styles.settingLeft}>
-            <Ionicons
-              name={profile?.is_private ? 'lock-closed-outline' : 'globe-outline'}
-              size={20}
-              color={profile?.is_private ? colors.primary : colors.textSecondary}
-            />
-            <View>
-              <Text style={[typography.label, { color: colors.text }]}>Private account</Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {profile?.is_private
-                  ? 'Only followers see your activities'
-                  : 'Your activities are visible to everyone'}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={profile?.is_private ?? false}
-            onValueChange={onTogglePrivacy}
-            trackColor={{ true: colors.primary, false: colors.border }}
-            thumbColor={colors.white}
-          />
-        </View>
-
         {/* ── Activities ── */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Activities</Text>
-            <TouchableOpacity onPress={() => router.push('/activity/create' as any)}>
-              <Text style={[typography.label, { color: colors.primary }]}>+ New</Text>
-            </TouchableOpacity>
+          {/* Tab bar */}
+          <View style={[styles.tabBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {(['hosting', 'joined'] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tabItem, activeTab === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.7}
+              >
+                <Text style={[typography.label, { color: activeTab === tab ? colors.primary : colors.textMuted }]}>
+                  {tab === 'hosting' ? 'Hosting' : 'Joined'}
+                </Text>
+                {(tab === 'hosting' ? hostingActivities : joinedActivities).length > 0 && (
+                  <View style={[styles.tabBadge, { backgroundColor: activeTab === tab ? colors.primary : colors.border }]}>
+                    <Text style={[styles.tabBadgeText, { color: activeTab === tab ? '#fff' : colors.textMuted }]}>
+                      {(tab === 'hosting' ? hostingActivities : joinedActivities).length}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
 
           {activitiesLoading
             ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
-            : activities.length === 0
+            : displayedActivities.length === 0
               ? (
                 <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <Ionicons name='calendar-outline' size={32} color={colors.textMuted} />
                   <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>
-                    No active activities
+                    {activeTab === 'hosting' ? 'No active activities' : 'Not joined any activities'}
                   </Text>
                   <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
-                    Create one from the map and it'll appear here
+                    {activeTab === 'hosting'
+                      ? 'Tap + New to create one'
+                      : 'Find activities on the map and join them'}
                   </Text>
                 </View>
               )
-              : activities.map((a) => (
-                <ActivityCard key={a.id} activity={a} colors={colors} onPress={() => {}} />
+              : displayedActivities.map((a) => (
+                <ActivityCard
+                  key={a.id}
+                  activity={a}
+                  colors={colors}
+                  variant={activeTab}
+                  onDelete={activeTab === 'hosting' ? () => onDeleteActivity(a) : undefined}
+                  openSwipeRef={openSwipeRef}
+                />
               ))
           }
         </View>
 
-        <View style={{ height: spacing.xxxl }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* ── Follow requests modal ── */}
-      <FollowRequestsModal
-        visible={requestsVisible}
-        onClose={() => setRequestsVisible(false)}
-        onCountChange={refreshRequestCount}
-        currentUserId={profile?.id ?? ''}
-        colors={colors}
-      />
-
-      {/* ── Edit profile modal ── */}
-      <EditProfileModal
-        visible={editVisible}
-        onClose={() => setEditVisible(false)}
-        colors={colors}
-      />
-
-      {/* ── Settings bottom sheet (simple modal) ── */}
-      <Modal
-        visible={settingsVisible}
-        animationType='fade'
-        transparent
-        onRequestClose={() => setSettingsVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.settingsOverlay}
-          onPress={() => setSettingsVisible(false)}
-          activeOpacity={1}
-        >
-          <View style={[styles.settingsSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={[styles.settingsHandle, { backgroundColor: colors.border }]} />
-
-            <TouchableOpacity
-              style={styles.settingsItem}
-              onPress={() => { setSettingsVisible(false); onSignOut() }}
-            >
-              <Ionicons name='log-out-outline' size={20} color={colors.error} />
-              <Text style={[typography.body, { color: colors.error }]}>Sign out</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {profile && user && followModal && (
+        <FollowListModal
+          visible={!!followModal}
+          onClose={() => setFollowModal(null)}
+          targetUserId={profile.id}
+          currentUserId={user.id}
+          type={followModal}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -715,16 +458,17 @@ export default function ProfileScreen() {
 
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
-    centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-
-    topBar: {
+    safe: { flex: 1, backgroundColor: colors.surface },
+    centered: { alignItems: 'center', justifyContent: 'center' },
+    header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: spacing.lg,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: 1,
     },
+    scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
     screenTitle: { ...typography.h2, color: colors.text },
     topBarActions: { flexDirection: 'row', gap: spacing.sm },
     iconBtn: {
@@ -789,17 +533,6 @@ function makeStyles(colors: AppColors) {
     },
     statDivider: { width: 1, marginVertical: 4 },
 
-    settingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: spacing.md,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      marginBottom: spacing.md,
-    },
-    settingLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-
     section: { marginTop: spacing.sm },
     sectionHeader: {
       flexDirection: 'row',
@@ -817,31 +550,35 @@ function makeStyles(colors: AppColors) {
       borderStyle: 'dashed',
     },
 
-    settingsOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'flex-end',
-    },
-    settingsSheet: {
-      borderTopLeftRadius: radius.xl,
-      borderTopRightRadius: radius.xl,
-      borderWidth: 1,
-      paddingBottom: Platform.OS === 'ios' ? 36 : 24,
-      paddingTop: spacing.sm,
-    },
-    settingsHandle: {
-      width: 36,
-      height: 4,
-      borderRadius: 2,
-      alignSelf: 'center',
-      marginBottom: spacing.md,
-    },
-    settingsItem: {
+    tabBar: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+    },
+    tabItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.md,
+      flex: 1,
+      justifyContent: 'center',
+    },
+    tabBadge: {
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+    },
+    tabBadgeText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: '#fff',
     },
   })
 }

@@ -1,7 +1,11 @@
 import React from 'react'
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native'
-import { colors, spacing, typography, radius } from '../../src/constants/theme'
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { Image } from 'expo-image'
+import { Ionicons } from '@expo/vector-icons'
+import { useColors } from '@/hooks/useColors'
+import { spacing, typography, radius } from '../../src/constants/theme'
 import { imageService } from '@/services/imageService'
+import { Input } from '../../src/components/ui'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,13 +15,14 @@ export interface OnboardingSlideData {
   title: string
   subtitle: string
   emoji: string
-  // Added optional extraState so the slide can read validation statuses from index.tsx
   render: (
     value: unknown,
     onChange: (val: unknown) => void,
     extraState?: any
   ) => React.ReactNode
 }
+
+// ─── Profile Pic Upload ───────────────────────────────────────────────────────
 
 function ProfilePicUpload({
   value,
@@ -26,76 +31,66 @@ function ProfilePicUpload({
   value: string | null
   onChange: (base64: string, uri: string) => void
 }) {
+  const colors = useColors()
+
   const handlePickImage = async () => {
-    const image = await imageService.pickImage([1, 1]) // Square crop
-    if (image && image.base64) {
-      onChange(image.base64, image.uri)
-    }
+    const image = await imageService.pickImage([1, 1])
+    if (image?.base64) onChange(image.base64, image.uri)
   }
 
   return (
     <View style={picStyles.container}>
-      <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={handlePickImage}
-        style={picStyles.imageWrapper}
-      >
+      <TouchableOpacity activeOpacity={0.8} onPress={handlePickImage} style={picStyles.wrapper}>
         {value ? (
-          <Image source={{ uri: value }} style={picStyles.image} />
+          <Image source={{ uri: value }} style={picStyles.image} contentFit='cover' />
         ) : (
-          <View style={picStyles.placeholder}>
-            <Text style={{ fontSize: 40 }}>👤</Text>
+          <View style={[picStyles.placeholder, { backgroundColor: colors.surfaceElevated }]}>
+            <Ionicons name='person-outline' size={44} color={colors.textMuted} />
           </View>
         )}
-        <View style={picStyles.editBadge}>
-          <Text style={{ fontSize: 16, color: 'white' }}>+</Text>
+        <View style={[picStyles.badge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+          <Ionicons name='camera' size={14} color='#fff' />
         </View>
       </TouchableOpacity>
-      <Text style={picStyles.hint}>Tippe, um ein Bild zu wählen</Text>
+      <Text style={[picStyles.hint, { color: colors.textMuted }]}>
+        Tap to choose a photo
+      </Text>
     </View>
   )
 }
 
 const picStyles = StyleSheet.create({
   container: { alignItems: 'center', marginTop: spacing.lg },
-  imageWrapper: {
+  wrapper: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  image: { width: '100%', height: '100%', borderRadius: 60 },
-  placeholder: { justifyContent: 'center', alignItems: 'center' },
-  editBadge: {
+  image: { width: '100%', height: '100%' },
+  placeholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 60,
+  },
+  badge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.primary,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
+    bottom: 4,
+    right: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 2,
-    borderColor: colors.background,
   },
-  hint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-  },
+  hint: { ...typography.caption, marginTop: spacing.md },
 })
 
-// ─── Reusable Option Picker ───────────────────────────────────────────────────
+// ─── Option Picker ────────────────────────────────────────────────────────────
 
 function OptionPicker({
   options,
@@ -108,6 +103,8 @@ function OptionPicker({
   onChange: (v: string | string[]) => void
   multi?: boolean
 }) {
+  const colors = useColors()
+
   const isSelected = (v: string) =>
     multi ? (value as string[]).includes(v) : value === v
 
@@ -121,33 +118,34 @@ function OptionPicker({
   }
 
   return (
-    <View style={picker.grid}>
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.value}
-          style={[
-            picker.option,
-            isSelected(opt.value) && picker.optionSelected,
-          ]}
-          onPress={() => handlePress(opt.value)}
-          activeOpacity={0.7}
-        >
-          {opt.emoji ? <Text style={picker.emoji}>{opt.emoji}</Text> : null}
-          <Text
+    <View style={pickerStyles.grid}>
+      {options.map((opt) => {
+        const selected = isSelected(opt.value)
+        return (
+          <TouchableOpacity
+            key={opt.value}
             style={[
-              picker.label,
-              isSelected(opt.value) && picker.labelSelected,
+              pickerStyles.option,
+              {
+                backgroundColor: selected ? colors.primary + '18' : colors.surface,
+                borderColor: selected ? colors.primary : colors.border,
+              },
             ]}
+            onPress={() => handlePress(opt.value)}
+            activeOpacity={0.7}
           >
-            {opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            {opt.emoji ? <Text style={pickerStyles.emoji}>{opt.emoji}</Text> : null}
+            <Text style={[pickerStyles.label, { color: selected ? colors.primary : colors.textSecondary }]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        )
+      })}
     </View>
   )
 }
 
-const picker = StyleSheet.create({
+const pickerStyles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -158,93 +156,82 @@ const picker = StyleSheet.create({
     paddingVertical: spacing.sm + 4,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: colors.border,
     alignItems: 'center',
     minWidth: 100,
   },
-  optionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryDark + '33',
-  },
   emoji: { fontSize: 24, marginBottom: 4 },
-  label: { ...typography.label, color: colors.textSecondary },
-  labelSelected: { color: colors.primary },
+  label: { ...typography.label },
 })
 
-// ─── Reusable Auto-Formatting Birthday Picker ─────────────────────────────────
+// ─── Birthday Input ───────────────────────────────────────────────────────────
 
-function BirthdayInput({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (v: string) => void
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { Input } = require('../../src/components/ui')
-
+function BirthdayInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const handleTextChange = (text: string) => {
-    // 1. Strip all non-numeric characters
     let cleaned = text.replace(/[^0-9]/g, '')
     if (cleaned.length > 8) cleaned = cleaned.slice(0, 8)
-
-    // 2. Format as TT.MM.JJJJ automatically while typing
     let formatted = cleaned
-    if (cleaned.length > 2) {
-      formatted = cleaned.slice(0, 2) + '.' + cleaned.slice(2)
-    }
-    if (cleaned.length > 4) {
-      formatted = formatted.slice(0, 5) + '.' + cleaned.slice(4)
-    }
-
+    if (cleaned.length > 2) formatted = cleaned.slice(0, 2) + '.' + cleaned.slice(2)
+    if (cleaned.length > 4) formatted = formatted.slice(0, 5) + '.' + cleaned.slice(4)
     onChange(formatted)
   }
 
   return (
     <View style={{ width: '100%', marginTop: spacing.md }}>
       <Input
-        placeholder='TT.MM.JJJJ'
+        placeholder='DD.MM.YYYY'
         value={value}
         onChangeText={handleTextChange}
         keyboardType='number-pad'
-        maxLength={10}
       />
     </View>
   )
 }
 
-// ─── Slide Local Styles ───────────────────────────────────────────────────────
-const slideStyles = StyleSheet.create({
-  hintText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.error,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  successText: {
-    ...typography.caption,
-    color: colors.primary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
+// ─── Username Slide Content ───────────────────────────────────────────────────
+
+function UsernameSlide({
+  value,
+  onChange,
+  status,
+}: {
+  value: string
+  onChange: (v: unknown) => void
+  status: string
+}) {
+  const colors = useColors()
+  return (
+    <View style={{ width: '100%', marginTop: spacing.md }}>
+      <Input
+        placeholder='@username'
+        value={value}
+        onChangeText={onChange}
+        autoCapitalize='none'
+      />
+      {status === 'checking' && (
+        <Text style={[statusStyles.hint, { color: colors.textMuted }]}>Checking…</Text>
+      )}
+      {status === 'invalid' && (
+        <Text style={[statusStyles.hint, { color: colors.error }]}>At least 3 characters.</Text>
+      )}
+      {status === 'taken' && (
+        <Text style={[statusStyles.hint, { color: colors.error }]}>Username already taken.</Text>
+      )}
+      {status === 'available' && (
+        <Text style={[statusStyles.hint, { color: colors.primary }]}>✓ Available</Text>
+      )}
+    </View>
+  )
+}
+
+const statusStyles = StyleSheet.create({
+  hint: { ...typography.caption, marginTop: spacing.xs, textAlign: 'center' },
 })
 
-// ─── Helper: safely cast unknown to the type OptionPicker expects ─────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function asString(v: unknown): string {
   return typeof v === 'string' ? v : ''
-}
-
-function asStringArray(v: unknown): string[] {
-  return Array.isArray(v) ? (v as string[]) : []
 }
 
 // ─── Slides Array ─────────────────────────────────────────────────────────────
@@ -253,46 +240,22 @@ export const ONBOARDING_SLIDES: OnboardingSlideData[] = [
   {
     id: 'username',
     key: 'username',
-    title: 'Wähle einen Benutzernamen',
-    subtitle: 'Dieser Name ist einzigartig für dich.',
+    title: 'Choose a username',
+    subtitle: 'This is how others will find you.',
     emoji: '👋',
-    render: (value, onChange, extraState) => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Input } = require('../../src/components/ui')
-      const status = extraState?.usernameStatus
-
-      return (
-        <View style={{ width: '100%', marginTop: spacing.md }}>
-          <Input
-            placeholder='@benutzername'
-            value={asString(value)}
-            onChangeText={onChange}
-            autoCapitalize='none'
-            autoCorrect={false}
-          />
-          {status === 'checking' && (
-            <Text style={slideStyles.hintText}>Wird geprüft...</Text>
-          )}
-          {status === 'invalid' && (
-            <Text style={slideStyles.errorText}>Mindestens 3 Zeichen.</Text>
-          )}
-          {status === 'taken' && (
-            <Text style={slideStyles.errorText}>
-              Benutzername ist bereits vergeben.
-            </Text>
-          )}
-          {status === 'available' && (
-            <Text style={slideStyles.successText}>Verfügbar!</Text>
-          )}
-        </View>
-      )
-    },
+    render: (value, onChange, extraState) => (
+      <UsernameSlide
+        value={asString(value)}
+        onChange={onChange}
+        status={extraState?.usernameStatus ?? 'idle'}
+      />
+    ),
   },
   {
     id: 'birthday',
     key: 'birthday',
-    title: 'Wann hast du Geburtstag?',
-    subtitle: 'Wir passen dein Erlebnis an dein Alter an.',
+    title: "When's your birthday?",
+    subtitle: "We'll tailor your experience to your age.",
     emoji: '🎂',
     render: (value, onChange) => (
       <BirthdayInput value={asString(value)} onChange={onChange} />
@@ -301,11 +264,10 @@ export const ONBOARDING_SLIDES: OnboardingSlideData[] = [
   {
     id: 'avatar',
     key: 'avatar',
-    title: 'Dein Profilbild',
-    subtitle: 'Ein Gesicht zur Fitness-Reise. (Optional)',
+    title: 'Add a profile photo',
+    subtitle: 'Put a face to your fitness journey. (Optional)',
     emoji: '📸',
     render: (value, onChange) => {
-      // We store an object { base64, uri } so we can show the preview instantly, but upload the base64 later
       const valObj = value as { base64: string; uri: string } | undefined
       return (
         <ProfilePicUpload

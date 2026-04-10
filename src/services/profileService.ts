@@ -80,6 +80,29 @@ export const profileService = {
     return { data: data ?? [], error }
   },
 
+  async getJoinedActivities(userId: string): Promise<{ data: Activity[]; error: Error | null }> {
+    const { data, error } = await supabase
+      .from('participants')
+      .select(`
+        status,
+        activity:activities!participants_activity_id_fkey(
+          *,
+          host:profiles!activities_host_id_fkey(id, username, avatar_url, is_verified),
+          participant_count:participants(count)
+        )
+      `)
+      .eq('user_id', userId)
+      .in('status', ['joined', 'approved'])
+      .order('created_at', { ascending: false })
+
+    const activities = (data ?? [])
+      .map((row: any) => row.activity)
+      .filter((a: any) => a && a.status === 'active')
+      .map((a: any) => ({ ...a, participant_count: a.participant_count?.[0]?.count ?? 0 }))
+
+    return { data: activities, error }
+  },
+
   async checkUsernameAvailable(username: string, currentUserId: string): Promise<boolean> {
     const { data } = await supabase
       .from('profiles')

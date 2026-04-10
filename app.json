@@ -22,7 +22,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.joytoGo.goepfert"
+      "package": "com.joytoGo.goepfert",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -30,6 +34,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#4A90D9",
+          "sounds": []
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -55,6 +67,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b1848ad8-e674-4cee-a9c4-879d7f502e06"
+      }
+    },
+    "owner": "goepse"
   }
 }

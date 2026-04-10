@@ -13,13 +13,16 @@ import {
   useOnboarding,
   OnboardingData,
 } from '../../src/context/OnboardingContext'
+import { useColors } from '@/hooks/useColors'
 import { Button } from '../../src/components/ui'
-import { colors, spacing, typography, radius } from '../../src/constants/theme'
+import { radius, spacing, typography } from '../../src/constants/theme'
 import { ONBOARDING_SLIDES } from './slides'
+import { Ionicons } from '@expo/vector-icons'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 
 export default function OnboardingScreen() {
+  const colors = useColors()
   const { completeOnboarding } = useOnboarding()
   const flatListRef = useRef<FlatList>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -30,24 +33,16 @@ export default function OnboardingScreen() {
     focusAreas: [] as string[],
   })
 
-  // State to track Supabase username check
   const [usernameStatus, setUsernameStatus] = useState<
     'idle' | 'checking' | 'available' | 'taken' | 'invalid'
   >('idle')
 
   const isLast = currentIndex === ONBOARDING_SLIDES.length - 1
 
-  // Debounced Username Availability Check
   useEffect(() => {
     const username = (values.username as string)?.trim().toLowerCase()
-    if (!username) {
-      setUsernameStatus('idle')
-      return
-    }
-    if (username.length < 3) {
-      setUsernameStatus('invalid')
-      return
-    }
+    if (!username) { setUsernameStatus('idle'); return }
+    if (username.length < 3) { setUsernameStatus('invalid'); return }
 
     setUsernameStatus('checking')
     const timer = setTimeout(async () => {
@@ -57,13 +52,8 @@ export default function OnboardingScreen() {
           .select('username')
           .eq('username', username)
           .maybeSingle()
-
-        if (data) {
-          setUsernameStatus('taken')
-        } else {
-          setUsernameStatus('available')
-        }
-      } catch (error) {
+        setUsernameStatus(data ? 'taken' : 'available')
+      } catch {
         setUsernameStatus('idle')
       }
     }, 500)
@@ -71,47 +61,33 @@ export default function OnboardingScreen() {
     return () => clearTimeout(timer)
   }, [values.username])
 
-  // Strict Validation to disable the "Next" button
   const isNextDisabled = () => {
     const currentSlide = ONBOARDING_SLIDES[currentIndex]
 
-    // 1. Check Username
-    if (currentSlide.key === 'username') {
-      return usernameStatus !== 'available'
-    }
+    if (currentSlide.key === 'username') return usernameStatus !== 'available'
 
-    // 2. Check Birthday (Strict Date Validation)
     if (currentSlide.key === 'birthday') {
       const b = values.birthday as string
       if (!b || b.length !== 10) return true
-
       const [d, m, y] = b.split('.').map(Number)
       const date = new Date(y, m - 1, d)
-
-      // Ensures exact calendar match (blocks "31.02") and reasonable years
-      const isValidDate =
+      return !(
         date.getFullYear() === y &&
         date.getMonth() === m - 1 &&
         date.getDate() === d &&
         y >= 1900 &&
         y <= new Date().getFullYear()
-
-      return !isValidDate
+      )
     }
 
-    // 3. Fallback check for empty arrays/strings on other slides
     const val = values[currentSlide.key]
     if (Array.isArray(val) && val.length === 0) return true
     if (!val && val !== 0) return true
-
     return false
   }
 
   const goNext = () => {
-    if (isLast) {
-      handleFinish()
-      return
-    }
+    if (isLast) { handleFinish(); return }
     const next = currentIndex + 1
     flatListRef.current?.scrollToIndex({ index: next, animated: true })
     setCurrentIndex(next)
@@ -126,13 +102,7 @@ export default function OnboardingScreen() {
 
   const handleFinish = async () => {
     setSaving(true)
-    // IMPORTANT: Make sure to update your OnboardingData type in OnboardingContext
-    // to include username and birthday to save them to your database!
-
-    const avatarData = values.avatar as
-      | { base64: string; uri: string }
-      | undefined
-
+    const avatarData = values.avatar as { base64: string; uri: string } | undefined
     await completeOnboarding({
       username: (values.username as string) ?? '',
       birthday: (values.birthday as string) ?? '',
@@ -145,29 +115,30 @@ export default function OnboardingScreen() {
     setValues((prev) => ({ ...prev, [key]: val }))
   }
 
-  // Pass down dynamic states to slides if they need it
   const slideExtraState = { usernameStatus }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Top Header Navigation & Progress */}
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+      {/* Progress header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={goPrev}
           disabled={currentIndex === 0}
+          hitSlop={12}
         >
-          {currentIndex > 0 ? <Text style={styles.backBtnText}>←</Text> : null}
+          {currentIndex > 0 && (
+            <Ionicons name='arrow-back' size={22} color={colors.text} />
+          )}
         </TouchableOpacity>
 
-        {/* Segmented Progress View */}
         <View style={styles.progressContainer}>
           {ONBOARDING_SLIDES.map((_, i) => (
             <View
               key={i}
               style={[
                 styles.progressSegment,
-                i <= currentIndex && styles.progressSegmentActive,
+                { backgroundColor: i <= currentIndex ? colors.primary : colors.surfaceElevated },
               ]}
             />
           ))}
@@ -187,11 +158,11 @@ export default function OnboardingScreen() {
         showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => (
           <View style={styles.slide}>
-            <View style={styles.emojiCircle}>
+            <View style={[styles.emojiCircle, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
               <Text style={styles.slideEmoji}>{item.emoji}</Text>
             </View>
-            <Text style={styles.slideTitle}>{item.title}</Text>
-            <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
+            <Text style={[styles.slideTitle, { color: colors.text }]}>{item.title}</Text>
+            <Text style={[styles.slideSubtitle, { color: colors.textSecondary }]}>{item.subtitle}</Text>
             <View style={styles.slideContent}>
               {item.render(
                 values[item.key],
@@ -208,10 +179,10 @@ export default function OnboardingScreen() {
         })}
       />
 
-      {/* Bottom Action Area */}
+      {/* Bottom action */}
       <View style={styles.bottomContainer}>
         <Button
-          title={isLast ? "Los geht's 🚀" : 'Nächster Schritt'}
+          title={isLast ? "Let's go 🚀" : 'Continue'}
           onPress={goNext}
           loading={saving}
           disabled={isNextDisabled()}
@@ -222,10 +193,7 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  safe: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -240,13 +208,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'flex-start',
   },
-  backBtnText: {
-    fontSize: 24,
-    color: colors.textSecondary,
-  },
-  headerSpacer: {
-    width: 40,
-  },
+  headerSpacer: { width: 40 },
   progressContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -258,10 +220,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 4,
     borderRadius: radius.full,
-    backgroundColor: colors.surface,
-  },
-  progressSegmentActive: {
-    backgroundColor: colors.primary,
   },
   slide: {
     width: SCREEN_WIDTH,
@@ -271,28 +229,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emojiCircle: {
-    width: 80,
-    height: 80,
+    width: 84,
+    height: 84,
     borderRadius: radius.full,
-    backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
   },
-  slideEmoji: { fontSize: 36 },
+  slideEmoji: { fontSize: 38 },
   slideTitle: {
     ...typography.h2,
-    color: colors.text,
     textAlign: 'center',
     marginBottom: spacing.xs,
   },
   slideSubtitle: {
     ...typography.body,
-    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.xl,
+    lineHeight: 22,
   },
   slideContent: { width: '100%' },
   bottomContainer: {

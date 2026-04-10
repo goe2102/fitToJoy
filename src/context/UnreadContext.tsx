@@ -2,10 +2,12 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { useAuth } from './AuthContext'
 import { notificationService } from '@/services/notificationService'
 import { chatService } from '@/services/chatService'
+import { groupChatService } from '@/services/groupChatService'
+import { supabase } from '../../lib/supabase'
 
 interface UnreadContextType {
   notificationCount: number
-  messageCount: number
+  messageCount: number     // DMs + group chats combined
   totalUnread: number
   refreshNotifications: () => Promise<void>
   refreshMessages: () => Promise<void>
@@ -26,14 +28,57 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
 
   const refreshMessages = useCallback(async () => {
     if (!user) return
-    const c = await chatService.getUnreadMessageCount(user.id)
-    setMessageCount(c)
+    const [dm, group] = await Promise.all([
+      chatService.getUnreadConversationCount(user.id),
+      groupChatService.getGroupUnreadCount(user.id),
+    ])
+    setMessageCount(dm + group)
   }, [user])
 
   useEffect(() => {
     refreshNotifications()
     refreshMessages()
   }, [refreshNotifications, refreshMessages])
+
+  // Realtime subscriptions
+  useEffect(() => {
+    if (!user) return
+
+    const notifSub = supabase
+      .channel(`ctx-notif:${user.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        () => refreshNotifications()
+      )
+      .subscribe()
+
+    const msgSub = supabase
+      .channel(`ctx-msg:${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        () => refreshMessages()
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' },
+        () => refreshMessages()
+      )
+      .subscribe()
+
+    const groupSub = supabase
+      .channel(`ctx-group:${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' },
+        () => refreshMessages()
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'group_chat_members', filter: `user_id=eq.${user.id}` },
+        () => refreshMessages()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(notifSub)
+      supabase.removeChannel(msgSub)
+      supabase.removeChannel(groupSub)
+    }
+  }, [user?.id, refreshNotifications, refreshMessages])
 
   return (
     <UnreadContext.Provider

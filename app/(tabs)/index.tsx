@@ -9,18 +9,22 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  InteractionManager,
 } from 'react-native'
 import MapView, { Marker, PROVIDER_DEFAULT, type Region } from 'react-native-maps'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
+import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { activityService } from '@/services/activityService'
-import { Button, Badge } from '@/components/ui'
+import { chatService } from '@/services/chatService'
+import { supabase } from '../../lib/supabase'
+import { Button } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 import type { Activity, Participant } from '@/types'
 
@@ -51,46 +55,99 @@ function ActivityMarker({
   colors: AppColors
   onPress: () => void
 }) {
-  const bg = activity.is_public ? colors.primary : colors.textSecondary
+  const accent = activity.is_public ? colors.primary : '#9CA3AF'
+  const [imgLoaded, setImgLoaded] = useState(false)
+  const hasCover = !!activity.cover_image_url
+
   return (
     <Marker
       coordinate={{ latitude: activity.latitude, longitude: activity.longitude }}
       onPress={onPress}
-      tracksViewChanges={false}
+      tracksViewChanges={hasCover && !imgLoaded}
+      anchor={{ x: 0.5, y: 1 }}
     >
-      <TouchableOpacity
-        onPress={onPress}
-        style={[styles.markerBubble, { backgroundColor: bg }]}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.markerText} numberOfLines={1}>
-          {activity.title}
-        </Text>
-        {!activity.is_public && (
-          <Ionicons name='lock-closed' size={10} color='rgba(255,255,255,0.8)' />
-        )}
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={mStyles.wrapper}>
+        {/* Pin circle */}
+        <View style={[mStyles.pin, { backgroundColor: accent }]}>
+          {hasCover ? (
+            <Image
+              source={{ uri: activity.cover_image_url! }}
+              style={mStyles.pinImage}
+              contentFit='cover'
+              onLoad={() => setImgLoaded(true)}
+            />
+          ) : (
+            <Ionicons name='flame-outline' size={22} color='#fff' />
+          )}
+          {/* Private lock badge */}
+          {!activity.is_public && (
+            <View style={mStyles.lockBadge}>
+              <Ionicons name='lock-closed' size={8} color='#fff' />
+            </View>
+          )}
+        </View>
+        {/* Teardrop tail */}
+        <View style={[mStyles.tail, { borderTopColor: accent }]} />
       </TouchableOpacity>
-      <View style={[styles.markerTail, { borderTopColor: bg }]} />
     </Marker>
   )
 }
 
-// ─── Participant Avatar Row ────────────────────────────────────────────────────
+// ─── Participant Row ───────────────────────────────────────────────────────────
 
-function ParticipantRow({ p, colors }: { p: Participant; colors: AppColors }) {
+function ParticipantRow({
+  p,
+  colors,
+  isHost,
+  onKick,
+  onPress,
+  onMessage,
+}: {
+  p: Participant
+  colors: AppColors
+  isHost: boolean
+  onKick: () => void
+  onPress: () => void
+  onMessage?: () => void
+}) {
   return (
-    <View style={styles.participantRow}>
-      {p.profile?.avatar_url
-        ? <Image source={{ uri: p.profile.avatar_url }} style={styles.participantAvatar} contentFit='cover' />
-        : (
-          <View style={[styles.participantAvatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-            <Ionicons name='person' size={14} color={colors.textMuted} />
-          </View>
-        )
-      }
-      <Text style={[typography.bodySmall, { color: colors.text }]}>
-        @{p.profile?.username ?? '—'}
-      </Text>
+    <View style={[styles.participantRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <TouchableOpacity style={styles.participantInfo} onPress={onPress} activeOpacity={0.7}>
+        {p.profile?.avatar_url
+          ? <Image source={{ uri: p.profile.avatar_url }} style={styles.participantAvatar} contentFit='cover' />
+          : (
+            <View style={[styles.participantAvatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name='person' size={15} color={colors.textMuted} />
+            </View>
+          )
+        }
+        <View>
+          <Text style={[typography.label, { color: colors.text, fontSize: 14 }]}>
+            @{p.profile?.username ?? '—'}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Tap to view profile</Text>
+        </View>
+      </TouchableOpacity>
+      {/* Message button */}
+      {onMessage && (
+        <TouchableOpacity
+          onPress={onMessage}
+          style={[styles.dmBtn, { borderColor: colors.border }]}
+          activeOpacity={0.8}
+        >
+          <Ionicons name='chatbubble-outline' size={14} color={colors.primary} />
+        </TouchableOpacity>
+      )}
+      {isHost && (
+        <TouchableOpacity
+          onPress={onKick}
+          style={[styles.kickBtn, { backgroundColor: colors.error }]}
+          activeOpacity={0.8}
+        >
+          <Ionicons name='person-remove-outline' size={14} color='#fff' />
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Kick</Text>
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
@@ -101,61 +158,139 @@ function ActivityDetailSheet({
   activity,
   visible,
   onClose,
+  onHostPress,
+  onStartDM,
   colors,
   currentUserId,
 }: {
   activity: Activity | null
   visible: boolean
   onClose: () => void
+  onHostPress: (hostId: string) => void
+  onStartDM: (targetId: string) => void
   colors: AppColors
   currentUserId: string
 }) {
   const { profile: myProfile } = useProfile()
   const [participants, setParticipants] = useState<Participant[]>([])
+  const [liveCount, setLiveCount] = useState<number>(0)
   const [myStatus, setMyStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [joining, setJoining] = useState(false)
 
+  const isHost = !!activity && activity.host?.id === currentUserId
+
+  const loadData = useCallback(async () => {
+    if (!activity) return
+    const [{ data: p }, status] = await Promise.all([
+      activityService.getParticipants(activity.id),
+      activityService.getMyParticipantStatus(activity.id, currentUserId),
+    ])
+    setParticipants(p)
+    setMyStatus(status)
+    setLiveCount(p.length)
+  }, [activity?.id, currentUserId])
+
   useEffect(() => {
     if (!activity || !visible) return
-    ;(async () => {
-      setLoading(true)
-      const [{ data: p }, status] = await Promise.all([
-        activityService.getParticipants(activity.id),
-        activityService.getMyParticipantStatus(activity.id, currentUserId),
-      ])
-      setParticipants(p)
-      setMyStatus(status)
-      setLoading(false)
-    })()
+    setLoading(true)
+    loadData().finally(() => setLoading(false))
+
+    // Realtime — re-fetch on any participants change for this activity
+    const channel = supabase
+      .channel(`sheet-participants:${activity.id}:${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'participants', filter: `activity_id=eq.${activity.id}` },
+        () => { loadData() }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [activity?.id, visible])
 
   const onJoin = async () => {
     if (!activity) return
+
+    // Age restriction check
+    if (activity.min_age || activity.max_age) {
+      if (!myProfile?.birthday) {
+        Alert.alert(
+          'Age Verification Required',
+          'This activity has an age restriction. Please add your birthday in Settings to join.'
+        )
+        return
+      }
+      const birth = new Date(myProfile.birthday)
+      const today = new Date()
+      const age = today.getFullYear() - birth.getFullYear() -
+        (today.getMonth() < birth.getMonth() ||
+         (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate()) ? 1 : 0)
+      if (activity.min_age && age < activity.min_age) {
+        Alert.alert('Age Restriction', `You must be at least ${activity.min_age} years old to join this activity.`)
+        return
+      }
+      if (activity.max_age && age > activity.max_age) {
+        Alert.alert('Age Restriction', `This activity is for participants up to ${activity.max_age} years old.`)
+        return
+      }
+    }
+
     setJoining(true)
-    const { error } = await activityService.join(
+    const result = await activityService.join(
       activity.id, currentUserId, activity.is_public,
       myProfile ? { username: myProfile.username, avatar_url: myProfile.avatar_url } : undefined,
       activity.host?.id,
-      activity.title
+      activity.title,
+      activity.max_participants
     )
     setJoining(false)
-    if (error) { Alert.alert('Error', error.message); return }
-    setMyStatus(activity.is_public ? 'joined' : 'pending')
-    if (!activity.is_public) Alert.alert('Request sent', 'The host will review your request.')
+    if (result.error) { Alert.alert('Error', result.error.message); return }
+
+    if (result.waitlisted) {
+      setMyStatus('waitlisted')
+      Alert.alert(
+        'Added to Waitlist',
+        "This activity is full. You've been added to the waitlist and will be notified automatically when a spot opens up."
+      )
+    } else {
+      setMyStatus(activity.is_public ? 'joined' : 'pending')
+      if (!activity.is_public) Alert.alert('Request sent', 'The host will review your request.')
+    }
   }
 
   const onLeave = async () => {
     if (!activity) return
-    Alert.alert('Leave activity', 'Are you sure?', [
+    const isWaitlisted = myStatus === 'waitlisted'
+    Alert.alert(
+      isWaitlisted ? 'Leave Waitlist' : 'Leave activity',
+      isWaitlisted ? 'Remove yourself from the waitlist?' : 'Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isWaitlisted ? 'Leave Waitlist' : 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            await activityService.leave(activity.id, currentUserId)
+            setMyStatus(null)
+            if (!isWaitlisted) setParticipants((p) => p.filter((x) => x.user_id !== currentUserId))
+          },
+        },
+      ]
+    )
+  }
+
+  const onKickParticipant = (userId: string, username: string) => {
+    if (!activity) return
+    Alert.alert('Kick participant', `Remove @${username} from this activity?`, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Leave',
+        text: 'Kick',
         style: 'destructive',
         onPress: async () => {
-          await activityService.leave(activity.id, currentUserId)
-          setMyStatus(null)
-          setParticipants((p) => p.filter((x) => x.user_id !== currentUserId))
+          await activityService.kickParticipant(activity.id, userId, activity.title)
+          setParticipants((p) => p.filter((x) => x.user_id !== userId))
+          setLiveCount((c) => Math.max(0, c - 1))
         },
       },
     ])
@@ -163,18 +298,19 @@ function ActivityDetailSheet({
 
   if (!activity) return null
 
-  const isFull = activity.max_participants !== null
-    && (activity.participant_count ?? 0) >= activity.max_participants
+  const isFull = activity.max_participants !== null && liveCount >= activity.max_participants
 
   const joinLabel =
-    myStatus === 'joined' || myStatus === 'approved' ? 'Leave'
+    myStatus === 'kicked' ? 'Not allowed'
+    : myStatus === 'joined' || myStatus === 'approved' ? 'Leave'
     : myStatus === 'pending' ? 'Request pending'
-    : isFull ? 'Full'
+    : myStatus === 'waitlisted' ? 'Leave Waitlist'
+    : isFull ? 'Join Waitlist'
     : activity.is_public ? 'Join'
     : 'Request to join'
 
-  const joinVariant = (myStatus === 'joined' || myStatus === 'approved') ? 'danger' : 'primary'
-  const joinDisabled = myStatus === 'pending' || isFull
+  const joinVariant = (myStatus === 'joined' || myStatus === 'approved' || myStatus === 'waitlisted') ? 'danger' : 'primary'
+  const joinDisabled = myStatus === 'pending' || myStatus === 'kicked'
 
   return (
     <Modal
@@ -184,41 +320,100 @@ function ActivityDetailSheet({
       onRequestClose={onClose}
     >
       <SafeAreaView style={[styles.sheet, { backgroundColor: colors.background }]} edges={['top']}>
-        {/* Header */}
-        <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
-            <Ionicons name='close' size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[typography.h3, { color: colors.text, flex: 1, marginLeft: spacing.md }]} numberOfLines={1}>
-            {activity.title}
-          </Text>
-          <Badge
-            label={activity.is_public ? 'Public' : 'Private'}
-            variant={activity.is_public ? 'primary' : 'neutral'}
-          />
-        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }} showsVerticalScrollIndicator={false}>
 
-        <ScrollView contentContainerStyle={styles.sheetBody} showsVerticalScrollIndicator={false}>
-          {/* Host */}
-          <View style={[styles.hostRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {activity.host?.avatar_url
-              ? <Image source={{ uri: activity.host.avatar_url }} style={styles.hostAvatar} contentFit='cover' />
-              : (
-                <View style={[styles.hostAvatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                  <Ionicons name='person' size={18} color={colors.textMuted} />
-                </View>
-              )
-            }
-            <View style={{ flex: 1 }}>
-              <Text style={[typography.label, { color: colors.text }]}>
-                @{activity.host?.username ?? '—'}
-                {activity.host?.is_verified && (
-                  <Text style={{ color: colors.primary }}> ✓</Text>
-                )}
-              </Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>Host</Text>
-            </View>
+          {/* ── Hero ── */}
+          <View style={styles.hero}>
+            {activity.cover_image_url ? (
+              <Image
+                source={{ uri: activity.cover_image_url }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit='cover'
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name='flame-outline' size={56} color={colors.textMuted} />
+              </View>
+            )}
+
+            {/* Top dark fade — keeps close button legible */}
+            <LinearGradient
+              colors={['rgba(0,0,0,0.38)', 'transparent']}
+              locations={[0, 0.4]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            {/* Bottom fade into page background */}
+            <LinearGradient
+              colors={['transparent', colors.background]}
+              locations={[0.5, 1]}
+              style={StyleSheet.absoluteFillObject}
+            />
+
+            {/* Close button */}
+            <TouchableOpacity style={styles.heroClose} onPress={onClose} activeOpacity={0.8}>
+              <Ionicons name='close' size={20} color='#fff' />
+            </TouchableOpacity>
           </View>
+
+          {/* ── Title block (below image) ── */}
+          <View style={styles.sheetTitleBlock}>
+            {/* Badges */}
+            {(!activity.is_public || (!!activity.price && activity.price > 0) || activity.min_age || activity.max_age) && (
+              <View style={styles.badgeRow}>
+                {!activity.is_public && (
+                  <View style={[styles.badgePill, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}>
+                    <Ionicons name='lock-closed' size={12} color={colors.textMuted} />
+                    <Text style={[typography.caption, { color: colors.textMuted, fontWeight: '700' }]}>Private</Text>
+                  </View>
+                )}
+                {!!activity.price && activity.price > 0 && (
+                  <View style={[styles.badgePill, { backgroundColor: colors.primary + '18' }]}>
+                    <Ionicons name='cash-outline' size={12} color={colors.primary} />
+                    <Text style={[typography.caption, { color: colors.primary, fontWeight: '700' }]}>€{activity.price} at location</Text>
+                  </View>
+                )}
+                {(activity.min_age || activity.max_age) && (
+                  <View style={[styles.badgePill, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}>
+                    <Ionicons name='person-outline' size={12} color={colors.textSecondary} />
+                    <Text style={[typography.caption, { color: colors.textSecondary, fontWeight: '600' }]}>
+                      {activity.min_age && activity.max_age
+                        ? `Ages ${activity.min_age}–${activity.max_age}`
+                        : activity.min_age ? `${activity.min_age}+` : `Up to ${activity.max_age}`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <Text style={[styles.sheetTitle, { color: colors.text }]} numberOfLines={3}>{activity.title}</Text>
+
+            {/* Host row */}
+            <TouchableOpacity
+              style={styles.sheetHostRow}
+              onPress={() => activity.host?.id && onHostPress(activity.host.id)}
+              activeOpacity={0.8}
+            >
+              {activity.host?.avatar_url
+                ? <Image source={{ uri: activity.host.avatar_url }} style={styles.sheetHostAvatar} contentFit='cover' />
+                : <Ionicons name='person-circle-outline' size={26} color={colors.textMuted} />
+              }
+              <Text style={[typography.label, { color: colors.textSecondary, flex: 1 }]}>
+                @{activity.host?.username ?? '—'}{activity.host?.is_verified ? ' ✓' : ''}
+              </Text>
+              {!isHost && activity.host?.id && (
+                <TouchableOpacity
+                  style={[styles.sheetMsgBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}
+                  onPress={() => onStartDM(activity.host!.id!)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name='chatbubble-outline' size={14} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Body ── */}
+          <View style={styles.sheetBody}>
 
           {/* Description */}
           {activity.description ? (
@@ -227,7 +422,7 @@ function ActivityDetailSheet({
             </Text>
           ) : null}
 
-          {/* Meta */}
+          {/* Meta grid */}
           <View style={[styles.metaGrid, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.metaCell}>
               <Ionicons name='calendar-outline' size={20} color={colors.primary} />
@@ -248,11 +443,11 @@ function ActivityDetailSheet({
             </View>
           </View>
 
-          {/* Participants */}
-          {activity.is_public && (
+          {/* Participants — visible to everyone on public, or to host on private */}
+          {(activity.is_public || isHost) && (
             <View style={styles.participantsSection}>
               <Text style={[typography.label, { color: colors.text, marginBottom: spacing.sm }]}>
-                Participants ({activity.participant_count ?? 0}
+                Participants ({liveCount}
                 {activity.max_participants ? `/${activity.max_participants}` : ''})
               </Text>
               {loading
@@ -260,11 +455,26 @@ function ActivityDetailSheet({
                 : participants.length === 0
                   ? <Text style={[typography.caption, { color: colors.textMuted }]}>No participants yet</Text>
                   : participants.map((p) => (
-                    <ParticipantRow key={p.user_id} p={p} colors={colors} />
+                    <ParticipantRow
+                      key={p.user_id}
+                      p={p}
+                      colors={colors}
+                      isHost={isHost}
+                      onKick={() => onKickParticipant(p.user_id, p.profile?.username ?? '?')}
+                      onPress={() => {
+                        if (!p.profile?.id) return
+                        onClose()
+                        InteractionManager.runAfterInteractions(() =>
+                          router.push(`/profile/${p.profile!.id}` as any)
+                        )
+                      }}
+                      onMessage={p.user_id !== currentUserId ? () => onStartDM(p.user_id) : undefined}
+                    />
                   ))
               }
             </View>
           )}
+          </View>{/* end sheetBody */}
         </ScrollView>
 
         {/* Join/Leave CTA */}
@@ -289,11 +499,31 @@ export default function MapScreen() {
   const { user } = useAuth()
   const mapRef = useRef<MapView>(null)
 
-  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard')
   const [activities, setActivities] = useState<Activity[]>([])
+
+  // Offset markers that share the exact same coordinates so they don't stack
+  const jitteredActivities = useMemo(() => {
+    const groups: Record<string, number[]> = {}
+    activities.forEach((a, i) => {
+      const key = `${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}`
+      if (!groups[key]) groups[key] = []
+      groups[key].push(i)
+    })
+    return activities.map((a, i) => {
+      const key = `${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}`
+      const group = groups[key]
+      if (group.length <= 1) return a
+      const idx = group.indexOf(i)
+      const angle = (2 * Math.PI * idx) / group.length
+      const r = 0.00035
+      return { ...a, latitude: a.latitude + r * Math.cos(angle), longitude: a.longitude + r * Math.sin(angle) }
+    })
+  }, [activities])
+
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const [mapCenter, setMapCenter] = useState({ lat: 48.1351, lng: 11.582 })
+  const [refreshing, setRefreshing] = useState(false)
 
   const loadActivities = useCallback(async () => {
     if (!user) return
@@ -302,7 +532,6 @@ export default function MapScreen() {
   }, [user])
 
   useEffect(() => {
-    // Request location permission and center map on user
     ;(async () => {
       const { status } = await Location.requestForegroundPermissionsAsync()
       if (status === 'granted') {
@@ -316,9 +545,23 @@ export default function MapScreen() {
         setMapCenter({ lat: loc.coords.latitude, lng: loc.coords.longitude })
       }
     })()
-
     loadActivities()
   }, [loadActivities])
+
+  // Refresh on tab focus
+  useFocusEffect(useCallback(() => { loadActivities() }, [loadActivities]))
+
+  // Realtime — new/cancelled/updated activities appear on map instantly
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel(`map-activities:${user.id}:${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => {
+        loadActivities()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user?.id])
 
   const onMarkerPress = (activity: Activity) => {
     setSelectedActivity(activity)
@@ -329,8 +572,27 @@ export default function MapScreen() {
     setMapCenter({ lat: region.latitude, lng: region.longitude })
   }
 
+  const onRefreshPress = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    await loadActivities()
+    setRefreshing(false)
+  }
+
   const onCreatePress = () => {
     router.push(`/activity/create?lat=${mapCenter.lat}&lng=${mapCenter.lng}` as any)
+  }
+
+  const onHostPress = (hostId: string) => {
+    setDetailVisible(false)
+    InteractionManager.runAfterInteractions(() => router.push(`/profile/${hostId}` as any))
+  }
+
+  const onStartDM = async (targetId: string) => {
+    if (!user) return
+    setDetailVisible(false)
+    const { data: convId } = await chatService.getOrCreateConversation(user.id, targetId)
+    if (convId) InteractionManager.runAfterInteractions(() => router.push(`/chat/${convId}` as any))
   }
 
   return (
@@ -340,13 +602,12 @@ export default function MapScreen() {
         style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_DEFAULT}
         initialRegion={{ latitude: 48.1351, longitude: 11.582, latitudeDelta: 0.08, longitudeDelta: 0.08 }}
-        mapType={mapType}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
         onRegionChangeComplete={onRegionChange}
       >
-        {activities.map((a) => (
+        {jitteredActivities.map((a) => (
           <ActivityMarker
             key={a.id}
             activity={a}
@@ -356,47 +617,19 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {/* Right-side controls */}
-      <View style={styles.rightControls}>
-        {/* Map type */}
-        <TouchableOpacity
-          style={[styles.controlBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => setMapType((t) => (t === 'standard' ? 'satellite' : 'standard'))}
-          hitSlop={8}
-        >
-          <Ionicons
-            name={mapType === 'standard' ? 'layers-outline' : 'map-outline'}
-            size={20}
-            color={colors.primary}
-          />
-        </TouchableOpacity>
-
-        {/* My location */}
-        <TouchableOpacity
-          style={[styles.controlBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={async () => {
-            const loc = await Location.getCurrentPositionAsync({})
-            mapRef.current?.animateToRegion({
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-              latitudeDelta: 0.04,
-              longitudeDelta: 0.04,
-            }, 600)
-          }}
-          hitSlop={8}
-        >
-          <Ionicons name='locate-outline' size={20} color={colors.primary} />
-        </TouchableOpacity>
-
-        {/* Refresh */}
-        <TouchableOpacity
-          style={[styles.controlBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={loadActivities}
-          hitSlop={8}
-        >
-          <Ionicons name='refresh-outline' size={20} color={colors.primary} />
-        </TouchableOpacity>
-      </View>
+      {/* Refresh button — top right */}
+      <TouchableOpacity
+        style={[styles.refreshBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        onPress={onRefreshPress}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name='refresh'
+          size={18}
+          color={colors.primary}
+          style={refreshing ? { opacity: 0.4 } : undefined}
+        />
+      </TouchableOpacity>
 
       {/* FAB — create activity */}
       <TouchableOpacity
@@ -407,11 +640,12 @@ export default function MapScreen() {
         <Ionicons name='add' size={28} color={colors.white} />
       </TouchableOpacity>
 
-      {/* Activity detail sheet */}
       <ActivityDetailSheet
         activity={selectedActivity}
         visible={detailVisible}
         onClose={() => setDetailVisible(false)}
+        onHostPress={onHostPress}
+        onStartDM={onStartDM}
         colors={colors}
         currentUserId={user?.id ?? ''}
       />
@@ -419,26 +653,70 @@ export default function MapScreen() {
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Marker styles (static — no theme dependency needed for white card) ───────
+
+const mStyles = StyleSheet.create({
+  wrapper: { alignItems: 'center' },
+  pin: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 7,
+  },
+  pinImage: { width: '100%', height: '100%' },
+  lockBadge: {
+    position: 'absolute',
+    bottom: 3,
+    right: 3,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 13,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+})
+
+// ─── Sheet styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  rightControls: {
+  refreshBtn: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 160 : 144,
+    top: Platform.OS === 'ios' ? 56 : 16,
     right: spacing.md,
-    gap: spacing.sm,
-  },
-  controlBtn: {
     width: 40,
     height: 40,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.12,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -457,49 +735,73 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  // Marker
-  markerBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-    maxWidth: 140,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  markerText: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    flexShrink: 1,
-  },
-  markerTail: {
-    width: 0,
-    height: 0,
-    alignSelf: 'center',
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
-  // Sheet
   sheet: { flex: 1 },
-  sheetHeader: {
+  // ── Hero ──
+  hero: {
+    height: 280,
+    overflow: 'hidden',
+  },
+  heroClose: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  // ── Title block below hero ──
+  sheetTitleBlock: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  sheetTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    lineHeight: 30,
+    marginBottom: spacing.sm,
+  },
+  sheetHostRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+    gap: spacing.sm,
+  },
+  sheetHostAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+  sheetMsgBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sheetBody: {
-    padding: spacing.md,
-    gap: 0,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.full,
   },
   hostRow: {
     flexDirection: 'row',
@@ -533,13 +835,39 @@ const styles = StyleSheet.create({
   participantRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    marginBottom: 6,
+  },
+  participantInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: 6,
+    flex: 1,
   },
   participantAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  kickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+  },
+  dmBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sheetCta: {
     padding: spacing.md,

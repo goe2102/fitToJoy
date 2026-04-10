@@ -62,9 +62,9 @@ export default function NewChatScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
           <Ionicons name='close' size={24} color={colors.text} />
         </TouchableOpacity>
@@ -73,7 +73,7 @@ export default function NewChatScreen() {
       </View>
 
       {/* Search */}
-      <View style={[styles.searchRow, { borderBottomColor: colors.border }]}>
+      <View style={[styles.searchRow, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name='search' size={16} color={colors.textMuted} />
           <TextInput
@@ -93,6 +93,7 @@ export default function NewChatScreen() {
         </View>
       </View>
 
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       {loading
         ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
         : (
@@ -147,6 +148,7 @@ export default function NewChatScreen() {
           />
         )
       }
+      </View>
     </SafeAreaView>
   )
 }

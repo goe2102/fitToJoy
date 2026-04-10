@@ -17,10 +17,12 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
+import { Image } from 'expo-image'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { activityService } from '@/services/activityService'
+import { imageService } from '@/services/imageService'
 import { Input } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 
@@ -51,10 +53,6 @@ function formatDuration(m: number) {
     r = m % 60
   return r ? `${h}h ${r}min` : `${h}h`
 }
-
-const DURATION_STEP = 15
-const DURATION_MIN = 15
-const DURATION_MAX = 480
 
 // ─── Section label ────────────────────────────────────────────────────────────
 
@@ -130,6 +128,10 @@ export default function CreateActivityScreen() {
   const { profile } = useProfile()
   const params = useLocalSearchParams<{ lat?: string; lng?: string }>()
 
+  // Cover image
+  const [coverBase64, setCoverBase64] = useState<string | null>(null)
+  const [coverUploading, setCoverUploading] = useState(false)
+
   // Form state
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -138,6 +140,14 @@ export default function CreateActivityScreen() {
   const [unlimited, setUnlimited] = useState(true)
   const [duration, setDuration] = useState(60)
   const [saving, setSaving] = useState(false)
+
+  // Price
+  const [price, setPrice] = useState('')
+
+  // Age restriction
+  const [hasAgeRestriction, setHasAgeRestriction] = useState(false)
+  const [minAge, setMinAge] = useState('')
+  const [maxAge, setMaxAge] = useState('')
 
   // Location
   const [latitude, setLatitude] = useState(parseFloat(params.lat ?? '48.1351'))
@@ -170,7 +180,7 @@ export default function CreateActivityScreen() {
 
   // Fetch current location on mount
   useEffect(() => {
-    if (params.lat && params.lng) return // already have coords from params
+    if (params.lat && params.lng) return
     ;(async () => {
       const { status } = await Location.requestForegroundPermissionsAsync()
       if (status !== 'granted') return
@@ -218,24 +228,21 @@ export default function CreateActivityScreen() {
     }, 800)
   }
 
-  const onStreetChange = (v: string) => {
-    setStreet(v)
-    triggerGeocode(v, city, postalCode, country)
-  }
-  const onCityChange = (v: string) => {
-    setCity(v)
-    triggerGeocode(street, v, postalCode, country)
-  }
-  const onPostalChange = (v: string) => {
-    setPostalCode(v)
-    triggerGeocode(street, city, v, country)
-  }
-  const onCountryChange = (v: string) => {
-    setCountry(v)
-    triggerGeocode(street, city, postalCode, v)
+  const onStreetChange = (v: string) => { setStreet(v); triggerGeocode(v, city, postalCode, country) }
+  const onCityChange = (v: string) => { setCity(v); triggerGeocode(street, v, postalCode, country) }
+  const onPostalChange = (v: string) => { setPostalCode(v); triggerGeocode(street, city, v, country) }
+  const onCountryChange = (v: string) => { setCountry(v); triggerGeocode(street, city, postalCode, v) }
+
+  const onPickCoverImage = async () => {
+    const result = await imageService.pickImage([16, 9])
+    if (!result?.base64) return
+    setCoverBase64(result.base64)
   }
 
-  const canSave = title.trim().length >= 2 && !saving
+  const canSave =
+    title.trim().length >= 2 &&
+    !saving &&
+    (unlimited || maxParticipants.trim().length > 0)
 
   const onSave = async () => {
     if (!canSave || !user) return
@@ -255,6 +262,21 @@ export default function CreateActivityScreen() {
     }
 
     setSaving(true)
+
+    // Upload cover image if one was picked
+    let coverUrl: string | null = null
+    if (coverBase64) {
+      setCoverUploading(true)
+      const filePath = `${user.id}/${Date.now()}.jpg`
+      const { url } = await imageService.uploadImage('activity-covers', filePath, coverBase64)
+      coverUrl = url ?? null
+      setCoverUploading(false)
+    }
+
+    const parsedPrice = price.trim() ? parseFloat(price.replace(',', '.')) : null
+    const parsedMin = hasAgeRestriction && minAge.trim() ? parseInt(minAge, 10) : null
+    const parsedMax = hasAgeRestriction && maxAge.trim() ? parseInt(maxAge, 10) : null
+
     const { error } = await activityService.create({
       host_id: user.id,
       title: title.trim(),
@@ -266,6 +288,10 @@ export default function CreateActivityScreen() {
       duration_minutes: duration,
       is_public: isPublic,
       max_participants: unlimited ? null : parseInt(maxParticipants, 10) || null,
+      cover_image_url: coverUrl,
+      price: parsedPrice,
+      min_age: parsedMin,
+      max_age: parsedMax,
     })
     setSaving(false)
 
@@ -297,7 +323,7 @@ export default function CreateActivityScreen() {
             setLongitude(e.nativeEvent.coordinate.longitude)
           }}
         >
-          <Marker coordinate={{ latitude, longitude }} pinColor='#6C63FF' />
+          <Marker coordinate={{ latitude, longitude }} pinColor={colors.primary} />
         </MapView>
 
         {/* Top bar */}
@@ -369,7 +395,7 @@ export default function CreateActivityScreen() {
         <View style={{ width: 32 }} />
       </View>
 
-      {/* ── Scrollable form (button lives inside) ── */}
+      {/* ── Scrollable form ── */}
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
@@ -379,13 +405,54 @@ export default function CreateActivityScreen() {
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         showsVerticalScrollIndicator={false}
       >
-        {/* Details */}
+
+        {/* ── Cover Image ── */}
+        <SectionLabel title='Cover Photo (Optional)' colors={colors} />
+        <TouchableOpacity
+          style={[
+            styles.coverPicker,
+            {
+              backgroundColor: colors.surface,
+              borderColor: coverBase64 ? colors.primary : colors.border,
+            },
+          ]}
+          onPress={onPickCoverImage}
+          activeOpacity={0.85}
+        >
+          {coverBase64 ? (
+            <>
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${coverBase64}` }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit='cover'
+              />
+              <View style={styles.coverOverlay}>
+                <View style={[styles.coverEditBadge, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
+                  <Ionicons name='camera' size={14} color='#fff' />
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Change photo</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.coverPlaceholder}>
+              <Ionicons name='image-outline' size={34} color={colors.textMuted} />
+              <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.sm }]}>
+                Add cover photo
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                Shown in map markers · Optional
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* ── Details ── */}
+        <SectionLabel title='Details' colors={colors} />
         <Input
           label='Title'
           placeholder='What are you doing?'
           value={title}
           onChangeText={setTitle}
-          autoFocus
           autoCapitalize='sentences'
         />
         <View style={{ height: spacing.md }} />
@@ -399,7 +466,7 @@ export default function CreateActivityScreen() {
           numberOfLines={3}
         />
 
-        {/* Location */}
+        {/* ── Location ── */}
         <SectionLabel title='Location' colors={colors} />
 
         {/* Mode segmented control */}
@@ -422,9 +489,7 @@ export default function CreateActivityScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons
-                  name={
-                    mode === 'address' ? 'home-outline' : 'map-outline'
-                  }
+                  name={mode === 'address' ? 'home-outline' : 'map-outline'}
                   size={14}
                   color={active ? colors.white : colors.textSecondary}
                 />
@@ -490,7 +555,6 @@ export default function CreateActivityScreen() {
               autoCapitalize='words'
             />
 
-            {/* Geocode status */}
             {geocoding ? (
               <View style={styles.geocodeStatus}>
                 <ActivityIndicator size='small' color={colors.primary} />
@@ -500,11 +564,7 @@ export default function CreateActivityScreen() {
               </View>
             ) : geocodeResolved ? (
               <View style={styles.geocodeStatus}>
-                <Ionicons
-                  name='checkmark-circle'
-                  size={15}
-                  color={colors.primary}
-                />
+                <Ionicons name='checkmark-circle' size={15} color={colors.primary} />
                 <Text style={[typography.caption, { color: colors.primary }]}>
                   Location found
                 </Text>
@@ -530,7 +590,7 @@ export default function CreateActivityScreen() {
               pitchEnabled={false}
               pointerEvents='none'
             >
-              <Marker coordinate={{ latitude, longitude }} pinColor='#6C63FF' />
+              <Marker coordinate={{ latitude, longitude }} pinColor={colors.primary} />
             </MapView>
             <TouchableOpacity
               style={[styles.mapEditBadge, { backgroundColor: colors.primary }]}
@@ -550,7 +610,7 @@ export default function CreateActivityScreen() {
           </View>
         )}
 
-        {/* When */}
+        {/* ── When ── */}
         <SectionLabel title='When' colors={colors} />
         <View style={[styles.pickerGroup, { borderColor: colors.border }]}>
           {/* Date */}
@@ -563,9 +623,7 @@ export default function CreateActivityScreen() {
             colors={colors}
           />
           {activePicker === 'date' && (
-            <View
-              style={[styles.pickerInline, { borderTopColor: colors.border }]}
-            >
+            <View style={[styles.pickerInline, { borderTopColor: colors.border }]}>
               <DateTimePicker
                 mode='date'
                 value={date}
@@ -581,9 +639,7 @@ export default function CreateActivityScreen() {
             </View>
           )}
 
-          <View
-            style={[styles.rowDivider, { backgroundColor: colors.border }]}
-          />
+          <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
 
           {/* Time */}
           <PickerRow
@@ -615,9 +671,7 @@ export default function CreateActivityScreen() {
             </View>
           )}
 
-          <View
-            style={[styles.rowDivider, { backgroundColor: colors.border }]}
-          />
+          <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
 
           {/* Duration */}
           <PickerRow
@@ -630,100 +684,74 @@ export default function CreateActivityScreen() {
           />
           {activePicker === 'duration' && (
             <View
-              style={[styles.pickerInline, { borderTopColor: colors.border }]}
+              style={[styles.pickerInline, { borderTopColor: colors.border, paddingHorizontal: 0, gap: spacing.sm }]}
             >
-              {/* Stepper */}
-              <View style={styles.durationStepper}>
-                <TouchableOpacity
-                  style={[
-                    styles.stepBtn,
-                    {
-                      backgroundColor: colors.surfaceElevated,
-                      borderColor: colors.border,
-                      opacity: duration <= DURATION_MIN ? 0.4 : 1,
-                    },
-                  ]}
-                  onPress={() =>
-                    setDuration((d) => Math.max(DURATION_MIN, d - DURATION_STEP))
-                  }
-                  disabled={duration <= DURATION_MIN}
-                >
-                  <Ionicons name='remove' size={20} color={colors.text} />
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    typography.h2,
-                    { color: colors.text, minWidth: 100, textAlign: 'center' },
-                  ]}
-                >
-                  {formatDuration(duration)}
-                </Text>
-                <TouchableOpacity
-                  style={[
-                    styles.stepBtn,
-                    {
-                      backgroundColor: colors.surfaceElevated,
-                      borderColor: colors.border,
-                      opacity: duration >= DURATION_MAX ? 0.4 : 1,
-                    },
-                  ]}
-                  onPress={() =>
-                    setDuration((d) => Math.min(DURATION_MAX, d + DURATION_STEP))
-                  }
-                  disabled={duration >= DURATION_MAX}
-                >
-                  <Ionicons name='add' size={20} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-              {/* Quick-pick chips */}
-              <View style={styles.durationChips}>
-                {[30, 60, 90, 120, 180, 240].map((opt) => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[
-                      styles.chip,
-                      { borderColor: colors.border },
-                      opt === duration && {
-                        backgroundColor: colors.primary,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                    onPress={() => setDuration(opt)}
-                  >
-                    <Text
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.durationScroll}
+                keyboardShouldPersistTaps='handled'
+              >
+                {[15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480].map((opt) => {
+                  const active = opt === duration
+                  return (
+                    <TouchableOpacity
+                      key={opt}
                       style={[
-                        typography.caption,
+                        styles.durationPill,
                         {
-                          fontWeight: '600',
-                          color:
-                            opt === duration
-                              ? colors.white
-                              : colors.textSecondary,
+                          backgroundColor: active ? colors.primary : colors.surfaceElevated,
+                          borderColor: active ? colors.primary : colors.border,
                         },
                       ]}
+                      onPress={() => setDuration(opt)}
+                      activeOpacity={0.75}
                     >
-                      {formatDuration(opt)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          typography.label,
+                          { color: active ? colors.white : colors.text },
+                        ]}
+                      >
+                        {formatDuration(opt)}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </ScrollView>
+
+              <View style={[styles.durationCustomRow, { borderTopColor: colors.border }]}>
+                <Ionicons name='time-outline' size={16} color={colors.textMuted} />
+                <Text style={[typography.body, { color: colors.textSecondary }]}>Custom</Text>
+                <View
+                  style={[
+                    styles.durationCustomInput,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                >
+                  <TextInput
+                    style={[typography.label, { color: colors.text, minWidth: 36, textAlign: 'center' }]}
+                    value={String(duration)}
+                    onChangeText={(v) => {
+                      const n = parseInt(v.replace(/[^0-9]/g, ''), 10)
+                      if (!isNaN(n) && n > 0) setDuration(Math.min(n, 1440))
+                    }}
+                    keyboardType='number-pad'
+                    selectTextOnFocus
+                  />
+                </View>
+                <Text style={[typography.body, { color: colors.textSecondary }]}>min</Text>
               </View>
             </View>
           )}
         </View>
 
-        {/* Visibility */}
+        {/* ── Visibility ── */}
         <SectionLabel title='Visibility' colors={colors} />
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
-              <Text style={[typography.label, { color: colors.text }]}>
-                Public
-              </Text>
+              <Text style={[typography.label, { color: colors.text }]}>Public</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {isPublic
                   ? 'Anyone can see and join instantly'
@@ -739,22 +767,13 @@ export default function CreateActivityScreen() {
           </View>
         </View>
 
-        {/* Participants */}
+        {/* ── Participants ── */}
         <SectionLabel title='Participants' colors={colors} />
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
-              <Text style={[typography.label, { color: colors.text }]}>
-                Unlimited spots
-              </Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                No cap on participants
-              </Text>
+              <Text style={[typography.label, { color: colors.text }]}>Unlimited spots</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>No cap on participants</Text>
             </View>
             <Switch
               value={unlimited}
@@ -765,12 +784,7 @@ export default function CreateActivityScreen() {
           </View>
           {!unlimited && (
             <>
-              <View
-                style={[
-                  styles.rowDivider,
-                  { backgroundColor: colors.border, marginVertical: spacing.md },
-                ]}
-              />
+              <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.md }]} />
               <Input
                 label='Max participants'
                 placeholder='e.g. 10'
@@ -778,11 +792,91 @@ export default function CreateActivityScreen() {
                 onChangeText={(t) => setMaxParticipants(t.replace(/[^0-9]/g, ''))}
                 keyboardType='number-pad'
               />
+              <View style={[styles.infoNote, { backgroundColor: colors.primary + '12' }]}>
+                <Ionicons name='time-outline' size={13} color={colors.primary} />
+                <Text style={[typography.caption, { color: colors.primary, flex: 1 }]}>
+                  When full, users join a waitlist. First in line gets the spot automatically when someone leaves.
+                </Text>
+              </View>
             </>
           )}
         </View>
 
-        {/* ── Save button (inside scroll, at the bottom) ── */}
+        {/* ── Price ── */}
+        <SectionLabel title='Entry Price (Optional)' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.priceRow}>
+            <Text style={[styles.currencySymbol, { color: colors.textSecondary }]}>€</Text>
+            <TextInput
+              style={[styles.priceInput, { color: colors.text }]}
+              placeholder='0.00 — free'
+              placeholderTextColor={colors.textMuted}
+              value={price}
+              onChangeText={(v) => setPrice(v.replace(/[^0-9.,]/g, ''))}
+              keyboardType='decimal-pad'
+            />
+          </View>
+          <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.sm }]} />
+          <View style={[styles.infoNote, { backgroundColor: colors.surfaceElevated }]}>
+            <Ionicons name='lock-closed-outline' size={13} color={colors.textMuted} />
+            <Text style={[typography.caption, { color: colors.textMuted, flex: 1 }]}>
+              Paid at location · Cannot be changed after creation
+            </Text>
+          </View>
+        </View>
+
+        {/* ── Age Restriction ── */}
+        <SectionLabel title='Age Restriction (Optional)' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.label, { color: colors.text }]}>Restrict by age</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                Limit who can join based on their age
+              </Text>
+            </View>
+            <Switch
+              value={hasAgeRestriction}
+              onValueChange={setHasAgeRestriction}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor={colors.white}
+            />
+          </View>
+          {hasAgeRestriction && (
+            <>
+              <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.md }]} />
+              <View style={styles.twoCol}>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label='Min Age'
+                    placeholder='e.g. 18'
+                    value={minAge}
+                    onChangeText={(v) => setMinAge(v.replace(/[^0-9]/g, ''))}
+                    keyboardType='number-pad'
+                  />
+                </View>
+                <View style={{ width: spacing.md }} />
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label='Max Age'
+                    placeholder='e.g. 35'
+                    value={maxAge}
+                    onChangeText={(v) => setMaxAge(v.replace(/[^0-9]/g, ''))}
+                    keyboardType='number-pad'
+                  />
+                </View>
+              </View>
+              <View style={[styles.infoNote, { backgroundColor: colors.surfaceElevated, marginTop: spacing.sm }]}>
+                <Ionicons name='lock-closed-outline' size={13} color={colors.textMuted} />
+                <Text style={[typography.caption, { color: colors.textMuted, flex: 1 }]}>
+                  Cannot be changed after creation
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* ── Save button ── */}
         <View style={{ marginTop: spacing.xl }}>
           <TouchableOpacity
             style={[
@@ -813,20 +907,6 @@ export default function CreateActivityScreen() {
               </>
             )}
           </TouchableOpacity>
-          {!canSave && (
-            <Text
-              style={[
-                typography.caption,
-                {
-                  color: colors.textMuted,
-                  textAlign: 'center',
-                  marginTop: spacing.xs,
-                },
-              ]}
-            >
-              Add a title to continue
-            </Text>
-          )}
         </View>
       </ScrollView>
     </View>
@@ -855,6 +935,33 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
     paddingHorizontal: 2,
+  },
+  // Cover image
+  coverPicker: {
+    height: 200,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.md,
+  },
+  coverEditBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.full,
   },
   // Location mode toggle
   segmentedControl: {
@@ -908,7 +1015,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: radius.full,
   },
-  // Picker group (date / time / duration)
+  // Picker group
   pickerGroup: {
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -930,36 +1037,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   rowDivider: { height: 1 },
-  // Duration stepper
-  durationStepper: {
+  durationScroll: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xl,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  stepBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  durationChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
-    justifyContent: 'center',
-  },
-  chip: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: spacing.sm,
+  },
+  durationPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
     borderRadius: radius.full,
     borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  durationCustomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderTopWidth: 1,
+  },
+  durationCustomInput: {
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginLeft: 'auto',
   },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  // Price
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  currencySymbol: {
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  priceInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    paddingVertical: spacing.xs,
+  },
+  // Info note
+  infoNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+  },
   // Save button
   saveBtn: {
     height: 54,
@@ -994,7 +1127,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    shadowColor: '#6C63FF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

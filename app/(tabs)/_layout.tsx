@@ -3,7 +3,6 @@ import { Animated, StyleSheet, View, Platform } from 'react-native'
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useColors } from '@/hooks/useColors'
-import { usePendingRequests } from '@/hooks/usePendingRequests'
 import { useUnread } from '@/context/UnreadContext'
 import { type AppColors } from '@/constants/theme'
 
@@ -70,8 +69,7 @@ function TabIcon({
 export default function AppLayout() {
   const colors = useColors()
   const styles = useMemo(() => makeBarStyles(colors), [colors])
-  const { count: requestCount } = usePendingRequests()
-  const { totalUnread } = useUnread()
+  const { messageCount } = useUnread()
 
   return (
     <Tabs
@@ -104,11 +102,9 @@ export default function AppLayout() {
           name={tab.name}
           options={{
             title: tab.label,
-            tabBarBadge: tab.name === 'profile' && requestCount > 0
-              ? requestCount
-              : tab.name === 'chats' && totalUnread > 0
-                ? totalUnread
-                : undefined,
+            tabBarBadge: tab.name === 'chats' && messageCount > 0
+              ? messageCount
+              : undefined,
           }}
         />
       ))}

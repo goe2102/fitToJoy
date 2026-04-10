@@ -330,9 +330,9 @@ export default function SearchScreen() {
   }, [tab, users, activities])
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]} edges={['top']}>
       {/* ── Search bar ── */}
-      <View style={[styles.searchRow, { borderBottomColor: colors.border }]}>
+      <View style={[styles.searchRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name='search' size={16} color={colors.textMuted} />
           <TextInput
@@ -354,7 +354,7 @@ export default function SearchScreen() {
       </View>
 
       {/* ── Tab switcher ── */}
-      <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+      <View style={[styles.tabRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
         {(['people', 'activities'] as Tab[]).map((t) => (
           <TouchableOpacity
             key={t}

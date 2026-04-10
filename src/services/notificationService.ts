@@ -1,7 +1,8 @@
 import { supabase } from '../../lib/supabase'
 import type { Notification, NotificationType } from '@/types'
 
-// ─── Insert helper (fire-and-forget from other services) ─────────────────────
+// ─── Insert helper ────────────────────────────────────────────────────────────
+// Push notification is sent automatically by the DB trigger on_notification_insert
 
 export async function insertNotification(
   userId: string,
@@ -47,6 +48,13 @@ export const notificationService = {
       .update({ read: true })
       .eq('id', notificationId)
   },
+
+  async deleteOne(notificationId: string) {
+    await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId)
+  },
 }
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
@@ -57,6 +65,7 @@ export function notificationText(n: Notification): string {
     case 'follow_request':   return `@${p.from_username} wants to follow you`
     case 'follow_accepted':  return `@${p.from_username} accepted your follow request`
     case 'join_request':     return `@${p.from_username} wants to join "${p.activity_title}"`
+    case 'joined_activity':  return `@${p.from_username} joined your activity "${p.activity_title}"`
     case 'join_approved':    return `Your request to join "${p.activity_title}" was approved`
     case 'join_denied':      return `Your request to join "${p.activity_title}" was denied`
     case 'activity_updated': return `"${p.activity_title}" has been updated`
@@ -71,6 +80,7 @@ export function notificationIcon(type: NotificationType): string {
     case 'follow_request':   return 'person-add-outline'
     case 'follow_accepted':  return 'checkmark-circle-outline'
     case 'join_request':     return 'enter-outline'
+    case 'joined_activity':  return 'person-add-outline'
     case 'join_approved':    return 'checkmark-done-outline'
     case 'join_denied':      return 'close-circle-outline'
     case 'activity_updated': return 'create-outline'
@@ -83,7 +93,8 @@ export function notificationIcon(type: NotificationType): string {
 export function notificationColor(type: NotificationType, colors: { primary: string; error: string; success: string; warning: string; textSecondary: string }): string {
   switch (type) {
     case 'follow_request':
-    case 'join_request':     return colors.primary
+    case 'join_request':
+    case 'joined_activity':  return colors.primary
     case 'follow_accepted':
     case 'join_approved':    return colors.success
     case 'join_denied':
