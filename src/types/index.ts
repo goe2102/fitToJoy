@@ -11,6 +11,8 @@ export interface Profile {
   is_verified: boolean
   onboarding_complete: boolean
   expo_push_token: string | null
+  average_rating: number | null
+  rating_count: number
   updated_at: string
 }
 
@@ -41,7 +43,7 @@ export interface Block {
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
 
-export type ActivityStatus = 'active' | 'cancelled' | 'expired'
+export type ActivityStatus = 'active' | 'cancelled' | 'expired' | 'finished'
 
 export interface Activity {
   id: string
@@ -101,6 +103,7 @@ export interface Conversation {
   last_message?: Pick<Message, 'content' | 'sender_id' | 'created_at' | 'read'> | null
   unread_count?: number
   muted?: boolean
+  cleared_at?: string | null   // timestamp: only messages after this are visible to current user
 }
 
 // ─── Group Chat ───────────────────────────────────────────────────────────────
@@ -118,7 +121,16 @@ export interface ActivityChat {
   id: string
   activity_id: string
   created_at: string
-  activity?: { id: string; title: string; host_id: string; cover_image_url?: string | null }
+  activity?: {
+    id: string
+    title: string
+    host_id: string
+    cover_image_url?: string | null
+    date?: string
+    start_time?: string
+    duration_minutes?: number
+    status?: string
+  }
   last_message?: Pick<GroupMessage, 'content' | 'sender_id' | 'created_at'> | null
   unread_count?: number
   muted?: boolean
@@ -136,6 +148,9 @@ export type NotificationType =
   | 'activity_updated'
   | 'activity_cancelled'
   | 'kicked_from_activity'
+  | 'new_message'
+  | 'new_group_message'
+  | 'activity_started'
 
 export interface Notification {
   id: string
@@ -143,5 +158,17 @@ export interface Notification {
   type: NotificationType
   payload: Record<string, unknown>
   read: boolean
+  created_at: string
+}
+
+// ─── Rating ───────────────────────────────────────────────────────────────────
+
+export interface Rating {
+  id: string
+  activity_id: string
+  rater_id: string
+  ratee_id: string
+  rating: number
+  review_text: string | null
   created_at: string
 }

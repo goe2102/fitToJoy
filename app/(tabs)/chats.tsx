@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   RefreshControl,
   Alert,
   TextInput,
+  Modal,
+  Pressable,
+  Platform,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { Ionicons } from '@expo/vector-icons'
-import { router } from 'expo-router'
-import Swipeable from 'react-native-gesture-handler/Swipeable'
+import { router, useFocusEffect } from 'expo-router'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { useUnread } from '@/context/UnreadContext'
@@ -45,254 +47,471 @@ type ChatItem =
   | { kind: 'dm';    id: string; data: Conversation;  sortKey: number }
   | { kind: 'group'; id: string; data: ActivityChat;  sortKey: number }
 
+// ─── Activity status ─────────────────────────────────────────────────────────
+
+type ActivityStatus = 'starting_soon' | 'live' | 'finished' | null
+
+function getActivityStatus(activity?: ActivityChat['activity']): ActivityStatus {
+  if (!activity?.date || !activity?.start_time || !activity?.duration_minutes) return null
+  if (activity.status === 'finished') return 'finished'
+  const now = Date.now()
+  const start = new Date(`${activity.date}T${activity.start_time}:00`).getTime()
+  const end = start + activity.duration_minutes * 60_000
+  if (now >= end) return 'finished'
+  if (now >= start) return 'live'
+  if (start - now <= 30 * 60_000) return 'starting_soon'
+  return null
+}
+
+function StatusPill({ status, colors }: { status: ActivityStatus; colors: AppColors }) {
+  if (!status) return null
+  const cfg = {
+    live:          { icon: 'radio-outline' as const,            label: 'Live',          bg: '#16a34a' },
+    starting_soon: { icon: 'time-outline' as const,             label: 'Starting soon', bg: colors.primary },
+    finished:      { icon: 'checkmark-circle-outline' as const, label: 'Finished',      bg: colors.textMuted },
+  }[status]
+  return (
+    <View style={[pill.wrap, { backgroundColor: cfg.bg + '22' }]}>
+      <Ionicons name={cfg.icon} size={10} color={cfg.bg} />
+      <Text style={[pill.label, { color: cfg.bg }]}>{cfg.label}</Text>
+    </View>
+  )
+}
+
+const pill = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 20, alignSelf: 'flex-start' },
+  label: { fontSize: 10, fontWeight: '700', letterSpacing: 0.2 },
+})
+
+// ─── Group Action Sheet ───────────────────────────────────────────────────────
+
+function GroupActionSheet({
+  chat,
+  currentUserId,
+  colors,
+  onClose,
+  onHide,
+  onMuteToggle,
+  onLeave,
+  onDelete,
+}: {
+  chat: ActivityChat
+  currentUserId: string
+  colors: AppColors
+  onClose: () => void
+  onHide: () => void
+  onMuteToggle: (muted: boolean) => void
+  onLeave: () => void
+  onDelete: () => void
+}) {
+  const insets = useSafeAreaInsets()
+  const isHost = chat.activity?.host_id === currentUserId
+
+  const rows: { icon: string; label: string; color: string; onPress: () => void }[] = [
+    {
+      icon: 'eye-off-outline',
+      label: 'Hide chat',
+      color: colors.text,
+      onPress: () => { onClose(); onHide() },
+    },
+    {
+      icon: chat.muted ? 'notifications-outline' : 'notifications-off-outline',
+      label: chat.muted ? 'Unmute notifications' : 'Mute notifications',
+      color: colors.text,
+      onPress: () => { onClose(); onMuteToggle(!chat.muted) },
+    },
+    {
+      icon: isHost ? 'trash-outline' : 'exit-outline',
+      label: isHost ? 'Delete group' : 'Leave group',
+      color: colors.error,
+      onPress: () => { onClose(); isHost ? onDelete() : onLeave() },
+    },
+  ]
+
+  return (
+    <Modal transparent animationType='fade' onRequestClose={onClose}>
+      <Pressable style={sheet.overlay} onPress={onClose}>
+        <Pressable style={[sheet.panel, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, spacing.md) }]} onPress={() => {}}>
+
+          {/* Group identity */}
+          <View style={[sheet.identity, { borderBottomColor: colors.border }]}>
+            {chat.activity?.cover_image_url ? (
+              <Image source={{ uri: chat.activity.cover_image_url }} style={sheet.identityImage} contentFit='cover' />
+            ) : (
+              <View style={[sheet.identityImagePlaceholder, { backgroundColor: colors.primary + '18' }]}>
+                <Ionicons name='people' size={22} color={colors.primary} />
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[sheet.identityName, { color: colors.text }]} numberOfLines={1}>
+                {chat.activity?.title ?? 'Activity Chat'}
+              </Text>
+              <Text style={[sheet.identityRole, { color: colors.textMuted }]}>
+                {isHost ? 'You are the host' : 'You are a member'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={12} style={[sheet.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name='close' size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Actions */}
+          {rows.map((row, i) => (
+            <TouchableOpacity
+              key={row.label}
+              style={[
+                sheet.row,
+                { borderBottomColor: colors.border },
+                i === rows.length - 1 && { borderBottomWidth: 0 },
+              ]}
+              onPress={row.onPress}
+              activeOpacity={0.7}
+            >
+              <View style={[sheet.iconWrap, {
+                backgroundColor: row.color === colors.error ? colors.error + '15' : colors.surfaceElevated,
+              }]}>
+                <Ionicons name={row.icon as any} size={18} color={row.color} />
+              </View>
+              <Text style={[sheet.rowLabel, { color: row.color }]}>{row.label}</Text>
+            </TouchableOpacity>
+          ))}
+
+          {/* Cancel */}
+          <TouchableOpacity style={[sheet.cancel, { backgroundColor: colors.primary }]} onPress={onClose} activeOpacity={0.7}>
+            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>Cancel</Text>
+          </TouchableOpacity>
+
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
+const sheet = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  panel: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: spacing.sm,
+    overflow: 'hidden',
+  },
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.xs,
+  },
+  identityImage: { width: 48, height: 48, borderRadius: radius.md },
+  identityImagePlaceholder: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  identityName: { fontSize: 16, fontWeight: '700' },
+  identityRole: { fontSize: 12, marginTop: 1 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  iconWrap: {
+    width: 36, height: 36, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  closeBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  rowLabel: { fontSize: 15, fontWeight: '500' },
+  rowSub: { fontSize: 12, marginTop: 1 },
+  cancel: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelLabel: { fontSize: 15, fontWeight: '600' },
+})
+
+// ─── DM Action Sheet ──────────────────────────────────────────────────────────
+
+function DmActionSheet({
+  conversation,
+  currentUserId,
+  colors,
+  onClose,
+  onHide,
+  onMuteToggle,
+  onClearForMe,
+}: {
+  conversation: Conversation
+  currentUserId: string
+  colors: AppColors
+  onClose: () => void
+  onHide: () => void
+  onMuteToggle: (muted: boolean) => void
+  onClearForMe: () => void
+}) {
+  const insets = useSafeAreaInsets()
+  const other = conversation.other_profile
+
+  const rows: { icon: string; label: string; sub?: string; color: string; onPress: () => void }[] = [
+    {
+      icon: 'eye-off-outline',
+      label: 'Hide chat',
+      sub: 'Reappears when they message you',
+      color: colors.text,
+      onPress: () => { onClose(); onHide() },
+    },
+    {
+      icon: conversation.muted ? 'notifications-outline' : 'notifications-off-outline',
+      label: conversation.muted ? 'Unmute notifications' : 'Mute notifications',
+      color: colors.text,
+      onPress: () => { onClose(); onMuteToggle(!conversation.muted) },
+    },
+    {
+      icon: 'trash-outline',
+      label: 'Delete for me',
+      sub: 'Clears your history. New messages will still arrive.',
+      color: colors.error,
+      onPress: () => { onClose(); onClearForMe() },
+    },
+  ]
+
+  return (
+    <Modal transparent animationType='fade' onRequestClose={onClose}>
+      <Pressable style={sheet.overlay} onPress={onClose}>
+        <Pressable style={[sheet.panel, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, spacing.md) }]} onPress={() => {}}>
+
+          {/* Identity */}
+          <View style={[sheet.identity, { borderBottomColor: colors.border }]}>
+            {other?.avatar_url ? (
+              <Image source={{ uri: other.avatar_url }} style={[sheet.identityImage, { borderRadius: 24 }]} contentFit='cover' />
+            ) : (
+              <View style={[sheet.identityImagePlaceholder, { backgroundColor: colors.surfaceElevated, borderRadius: 24 }]}>
+                <Ionicons name='person' size={22} color={colors.textMuted} />
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[sheet.identityName, { color: colors.text }]} numberOfLines={1}>
+                {other?.username ?? '—'}
+              </Text>
+              <Text style={[sheet.identityRole, { color: colors.textMuted }]}>Direct message</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={12} style={[sheet.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name='close' size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {rows.map((row, i) => (
+            <TouchableOpacity
+              key={row.label}
+              style={[sheet.row, { borderBottomColor: colors.border }, i === rows.length - 1 && { borderBottomWidth: 0 }]}
+              onPress={row.onPress}
+              activeOpacity={0.7}
+            >
+              <View style={[sheet.iconWrap, { backgroundColor: row.color === colors.error ? colors.error + '15' : colors.surfaceElevated }]}>
+                <Ionicons name={row.icon as any} size={18} color={row.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[sheet.rowLabel, { color: row.color }]}>{row.label}</Text>
+                {row.sub && <Text style={[sheet.rowSub, { color: colors.textMuted }]}>{row.sub}</Text>}
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity style={[sheet.cancel, { backgroundColor: colors.primary }]} onPress={onClose} activeOpacity={0.7}>
+            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>Cancel</Text>
+          </TouchableOpacity>
+
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
 // ─── Group Chat Card ──────────────────────────────────────────────────────────
 
 function GroupChatCard({
   chat,
   colors,
-  currentUserId,
-  onMuteToggle,
-  openSwipeRef,
+  onLongPress,
 }: {
   chat: ActivityChat
   colors: AppColors
-  currentUserId: string
-  onMuteToggle: (muted: boolean) => void
-  openSwipeRef: React.MutableRefObject<Swipeable | null>
+  onLongPress: () => void
 }) {
-  const swipeRef = useRef<Swipeable>(null)
   const unread = chat.unread_count ?? 0
+  const actStatus = getActivityStatus(chat.activity)
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      renderLeftActions={() => (
-        <TouchableOpacity
-          style={[card.muteAction, { backgroundColor: chat.muted ? colors.primary : colors.surfaceElevated }]}
-          onPress={() => { swipeRef.current?.close(); onMuteToggle(!chat.muted) }}
-          activeOpacity={0.85}
-        >
-          <Ionicons name={chat.muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color={chat.muted ? '#fff' : colors.textSecondary} />
-          <Text style={[card.muteText, { color: chat.muted ? '#fff' : colors.textSecondary }]}>
-            {chat.muted ? 'Unmute' : 'Mute'}
-          </Text>
-        </TouchableOpacity>
-      )}
-      overshootLeft={false}
-      containerStyle={{ marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.lg, overflow: 'hidden' }}
-      onSwipeableOpen={() => { if (openSwipeRef.current !== swipeRef.current) openSwipeRef.current?.close(); openSwipeRef.current = swipeRef.current }}
-      onSwipeableClose={() => { if (openSwipeRef.current === swipeRef.current) openSwipeRef.current = null }}
+    <TouchableOpacity
+      style={[c.card, { backgroundColor: colors.surface }]}
+      onPress={() => router.push(`/group-chat/${chat.id}` as any)}
+      onLongPress={onLongPress}
+      activeOpacity={0.82}
+      delayLongPress={350}
     >
-      <TouchableOpacity
-        style={[card.container, { backgroundColor: colors.surface, marginHorizontal: 0, marginBottom: 0, borderRadius: 0 }]}
-        onPress={() => { openSwipeRef.current?.close(); router.push(`/group-chat/${chat.id}` as any) }}
-        activeOpacity={0.85}
-      >
-        <View style={{ position: 'relative' }}>
-          {chat.activity?.cover_image_url ? (
-            <Image source={{ uri: chat.activity.cover_image_url }} style={card.avatar} contentFit='cover' />
-          ) : (
-            <View style={[card.groupIcon, { backgroundColor: colors.primary + '18' }]}>
-              <Ionicons name='people' size={24} color={colors.primary} />
-            </View>
-          )}
-          {chat.muted && (
-            <View style={[card.mutedDot, { backgroundColor: colors.surfaceElevated, borderColor: colors.surface }]}>
-              <Ionicons name='notifications-off' size={9} color={colors.textMuted} />
-            </View>
+      <View style={c.imageWrap}>
+        {chat.activity?.cover_image_url ? (
+          <Image source={{ uri: chat.activity.cover_image_url }} style={c.image} contentFit='cover' />
+        ) : (
+          <View style={[c.imagePlaceholder, { backgroundColor: colors.primary + '18' }]}>
+            <Ionicons name='people' size={26} color={colors.primary} />
+          </View>
+        )}
+        {chat.muted && (
+          <View style={[c.mutedBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.background }]}>
+            <Ionicons name='notifications-off' size={9} color={colors.textMuted} />
+          </View>
+        )}
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Row 1: title + time */}
+        <View style={c.row}>
+          <Text style={[c.title, { color: colors.text }]} numberOfLines={1}>
+            {chat.activity?.title ?? 'Activity Chat'}
+          </Text>
+          {chat.last_message && (
+            <Text style={[c.time, { color: colors.textMuted }]}>{timeAgo(chat.last_message.created_at)}</Text>
           )}
         </View>
-
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={card.rowTop}>
-            <Text style={[card.name, { color: colors.text }]} numberOfLines={1}>
-              {chat.activity?.title ?? 'Activity Chat'}
-            </Text>
-            <View style={card.rightCol}>
-              {chat.last_message && (
-                <Text style={[card.time, { color: colors.textMuted }]}>
-                  {timeAgo(chat.last_message.created_at)}
-                </Text>
-              )}
-              {unread > 0 && !chat.muted && (
-                <View style={[card.badge, { backgroundColor: colors.primary }]}>
-                  <Text style={card.badgeText}>{unread > 99 ? '99+' : unread}</Text>
-                </View>
-              )}
-            </View>
-          </View>
+        {/* Row 2: preview + badge */}
+        <View style={[c.row, { marginTop: 2 }]}>
           <Text
-            style={[card.preview, { color: unread > 0 && !chat.muted ? colors.text : colors.textMuted, fontWeight: unread > 0 && !chat.muted ? '600' : '400' }]}
+            style={[c.preview, { color: unread > 0 && !chat.muted ? colors.text : colors.textMuted, fontWeight: unread > 0 && !chat.muted ? '600' : '400' }]}
             numberOfLines={1}
           >
             {chat.last_message ? chat.last_message.content : 'No messages yet'}
           </Text>
+          {unread > 0 && !chat.muted && (
+            <View style={[c.badge, { backgroundColor: colors.primary }]}>
+              <Text style={c.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+            </View>
+          )}
         </View>
-      </TouchableOpacity>
-    </Swipeable>
+        {actStatus && <View style={{ marginTop: 4 }}><StatusPill status={actStatus} colors={colors} /></View>}
+      </View>
+    </TouchableOpacity>
   )
 }
 
 // ─── DM Conversation Card ─────────────────────────────────────────────────────
 
-function ConversationCard({ conversation: c, colors, currentUserId, onDelete, onMuteToggle, openSwipeRef }: {
+function ConversationCard({
+  conversation: cv,
+  colors,
+  currentUserId,
+  onLongPress,
+}: {
   conversation: Conversation
   colors: AppColors
   currentUserId: string
-  onDelete: () => void
-  onMuteToggle: (muted: boolean) => void
-  openSwipeRef: React.MutableRefObject<Swipeable | null>
+  onLongPress: () => void
 }) {
-  const swipeRef = useRef<Swipeable>(null)
-  const other = c.other_profile
-  const unreadCount = c.unread_count ?? 0
-  const isUnread = unreadCount > 0 && !c.muted
+  const other = cv.other_profile
+  const unreadCount = cv.unread_count ?? 0
+  const isUnread = unreadCount > 0 && !cv.muted
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      renderLeftActions={() => (
-        <TouchableOpacity
-          style={[card.muteAction, { backgroundColor: c.muted ? colors.primary : colors.surfaceElevated }]}
-          onPress={() => { swipeRef.current?.close(); onMuteToggle(!c.muted) }}
-          activeOpacity={0.85}
-        >
-          <Ionicons name={c.muted ? 'notifications-outline' : 'notifications-off-outline'} size={20} color={c.muted ? '#fff' : colors.textSecondary} />
-          <Text style={[card.muteText, { color: c.muted ? '#fff' : colors.textSecondary }]}>
-            {c.muted ? 'Unmute' : 'Mute'}
-          </Text>
-        </TouchableOpacity>
-      )}
-      renderRightActions={() => (
-        <TouchableOpacity
-          style={[card.deleteAction, { backgroundColor: colors.error }]}
-          onPress={() => { swipeRef.current?.close(); onDelete() }}
-          activeOpacity={0.85}
-        >
-          <Ionicons name='trash-outline' size={20} color='#fff' />
-          <Text style={card.deleteText}>Delete</Text>
-        </TouchableOpacity>
-      )}
-      overshootLeft={false}
-      overshootRight={false}
-      containerStyle={{ marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.lg, overflow: 'hidden' }}
-      onSwipeableOpen={() => { if (openSwipeRef.current !== swipeRef.current) openSwipeRef.current?.close(); openSwipeRef.current = swipeRef.current }}
-      onSwipeableClose={() => { if (openSwipeRef.current === swipeRef.current) openSwipeRef.current = null }}
+    <TouchableOpacity
+      style={[c.card, { backgroundColor: colors.surface }]}
+      onPress={() => router.push(`/chat/${cv.id}` as any)}
+      onLongPress={onLongPress}
+      activeOpacity={0.82}
+      delayLongPress={350}
     >
-      <TouchableOpacity
-        style={[card.container, { backgroundColor: colors.surface, marginHorizontal: 0, marginBottom: 0, borderRadius: 0 }]}
-        onPress={() => { openSwipeRef.current?.close(); router.push(`/chat/${c.id}` as any) }}
-        activeOpacity={0.85}
-      >
-        <TouchableOpacity
-          onPress={() => { openSwipeRef.current?.close(); other?.id && router.push(`/profile/${other.id}` as any) }}
-          activeOpacity={0.85}
-        >
-          <View style={{ position: 'relative' }}>
-            {other?.avatar_url
-              ? <Image source={{ uri: other.avatar_url }} style={card.avatar} contentFit='cover' />
-              : (
-                <View style={[card.avatar, { backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
-                  <Ionicons name='person' size={22} color={colors.textMuted} />
-                </View>
-              )
-            }
-            {isUnread && <View style={[card.unreadDot, { backgroundColor: colors.primary, borderColor: colors.surface }]} />}
-            {c.muted && (
-              <View style={[card.mutedDot, { backgroundColor: colors.surfaceElevated, borderColor: colors.surface }]}>
-                <Ionicons name='notifications-off' size={9} color={colors.textMuted} />
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={card.rowTop}>
-            <Text style={[card.name, { color: colors.text }]} numberOfLines={1}>
-              {other?.username ?? '—'}{other?.is_verified ? ' ✓' : ''}
-            </Text>
-            <View style={card.rightCol}>
-              {c.last_message && (
-                <Text style={[card.time, { color: colors.textMuted }]}>{timeAgo(c.last_message.created_at)}</Text>
-              )}
-              {isUnread && (
-                <View style={[card.badge, { backgroundColor: colors.primary }]}>
-                  <Text style={card.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              )}
+      <TouchableOpacity onPress={() => other?.id && router.push(`/profile/${other.id}` as any)} activeOpacity={0.8}>
+        <View style={c.imageWrap}>
+          {other?.avatar_url ? (
+            <Image source={{ uri: other.avatar_url }} style={[c.image, { borderRadius: 27 }]} contentFit='cover' />
+          ) : (
+            <View style={[c.imagePlaceholder, { backgroundColor: colors.surfaceElevated, borderRadius: 27 }]}>
+              <Ionicons name='person' size={24} color={colors.textMuted} />
             </View>
-          </View>
-          <Text
-            style={[card.preview, { color: isUnread ? colors.text : colors.textMuted, fontWeight: isUnread ? '600' : '400' }]}
-            numberOfLines={1}
-          >
-            {c.last_message
-              ? `${c.last_message.sender_id === currentUserId ? 'You: ' : ''}${c.last_message.content}`
-              : 'No messages yet'
-            }
-          </Text>
+          )}
+          {isUnread && <View style={[c.unreadDot, { backgroundColor: colors.primary, borderColor: colors.background }]} />}
+          {cv.muted && (
+            <View style={[c.mutedBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.background }]}>
+              <Ionicons name='notifications-off' size={9} color={colors.textMuted} />
+            </View>
+          )}
         </View>
       </TouchableOpacity>
-    </Swipeable>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Row 1: username + time */}
+        <View style={c.row}>
+          <Text style={[c.title, { color: colors.text }]} numberOfLines={1}>
+            {other?.username ?? '—'}{other?.is_verified ? ' ✓' : ''}
+          </Text>
+          {cv.last_message && <Text style={[c.time, { color: colors.textMuted }]}>{timeAgo(cv.last_message.created_at)}</Text>}
+        </View>
+        {/* Row 2: preview + badge */}
+        <View style={[c.row, { marginTop: 2 }]}>
+          <Text
+            style={[c.preview, { color: isUnread ? colors.text : colors.textMuted, fontWeight: isUnread ? '600' : '400' }]}
+            numberOfLines={1}
+          >
+            {cv.last_message
+              ? `${cv.last_message.sender_id === currentUserId ? 'You: ' : ''}${cv.last_message.content}`
+              : 'No messages yet'}
+          </Text>
+          {isUnread && (
+            <View style={[c.badge, { backgroundColor: colors.primary }]}>
+              <Text style={c.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
   )
 }
 
 // ─── Shared card styles ───────────────────────────────────────────────────────
 
-const card = StyleSheet.create({
-  container: {
+const c = StyleSheet.create({
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
     borderRadius: radius.lg,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  groupIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
+  imageWrap: { position: 'relative' },
+  image: { width: 54, height: 54, borderRadius: radius.md },
+  imagePlaceholder: { width: 54, height: 54, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  mutedBadge: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
   },
-  mutedDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  avatar: { width: 52, height: 52, borderRadius: 26 },
   unreadDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    borderWidth: 2,
+    position: 'absolute', bottom: 1, right: 1,
+    width: 13, height: 13, borderRadius: 7, borderWidth: 2,
   },
-  rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
-  name: { fontSize: 15, fontWeight: '600', flex: 1 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { fontSize: 15, fontWeight: '600', flex: 1 },
   time: { fontSize: 12 },
-  rightCol: { alignItems: 'flex-end', gap: 4 },
   preview: { fontSize: 13, lineHeight: 18 },
-  badge: { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  badgeText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
-  deleteAction: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg, gap: 4, borderRadius: radius.lg },
-  deleteText: { ...typography.caption, color: '#fff', fontWeight: '700' },
-  muteAction: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg, gap: 4, borderRadius: radius.lg },
-  muteText: { ...typography.caption, fontWeight: '700' },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  badgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 })
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -309,7 +528,12 @@ export default function ChatsScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
-  const openSwipeRef = useRef<Swipeable | null>(null)
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set())
+  const [hiddenDmIds, setHiddenDmIds] = useState<Set<string>>(new Set())
+
+  // Action sheets
+  const [groupSheet, setGroupSheet] = useState<ActivityChat | null>(null)
+  const [dmSheet, setDmSheet] = useState<Conversation | null>(null)
 
   const bellBadge = requestCount + notificationCount
 
@@ -328,29 +552,35 @@ export default function ChatsScreen() {
     loadAll().finally(() => setLoading(false))
   }, [loadAll])
 
+  // Silent reload when navigating back from a chat — clears stale unread counts
+  useFocusEffect(
+    useCallback(() => {
+      loadAll()
+      refreshMessages()
+    }, [loadAll, refreshMessages])
+  )
+
   useEffect(() => {
     if (!user) return
-    // Capture uid so handlers never close over a stale user object
     const uid = user.id
 
     const channel = supabase
       .channel(`chats-list:${uid}:${Date.now()}`)
-      // ── DM: new message → update preview + unread count inline ──────────────
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const msg = payload.new as any
+        // Un-hide DM when a new message arrives
+        setHiddenDmIds((prev) => {
+          if (!prev.has(msg.conversation_id)) return prev
+          const next = new Set(prev); next.delete(msg.conversation_id); return next
+        })
         setConversations((prev) => {
-          if (!prev.some((c) => c.id === msg.conversation_id)) return prev
-          return prev.map((c) => {
-            if (c.id !== msg.conversation_id) return c
+          if (!prev.some((cv) => cv.id === msg.conversation_id)) return prev
+          return prev.map((cv) => {
+            if (cv.id !== msg.conversation_id) return cv
             return {
-              ...c,
-              last_message: {
-                content: msg.content,
-                sender_id: msg.sender_id,
-                created_at: msg.created_at,
-                read: msg.read,
-              },
-              unread_count: msg.sender_id !== uid ? (c.unread_count ?? 0) + 1 : c.unread_count,
+              ...cv,
+              last_message: { content: msg.content, sender_id: msg.sender_id, created_at: msg.created_at, read: msg.read },
+              unread_count: msg.sender_id !== uid ? (cv.unread_count ?? 0) + 1 : cv.unread_count,
             }
           }).sort((a, b) => {
             const ta = a.last_message ? new Date(a.last_message.created_at).getTime() : 0
@@ -360,28 +590,22 @@ export default function ChatsScreen() {
         })
         refreshMessages()
       })
-      // ── DM: new conversation started → full reload to add the row ─────────────
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, () => {
-        loadAll()
-      })
-      // ── DM: read-status changed → refresh unread counts ──────────────────────
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
-        loadAll()
-      })
-      // ── Group: new message → update preview + unread count inline ────────────
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, () => loadAll())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => loadAll())
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, (payload) => {
         const msg = payload.new as any
+        // Un-hide when a new message arrives
+        setHiddenGroupIds((prev) => {
+          if (!prev.has(msg.chat_id)) return prev
+          const next = new Set(prev); next.delete(msg.chat_id); return next
+        })
         setGroupChats((prev) => {
           if (!prev.some((g) => g.id === msg.chat_id)) return prev
           return prev.map((g) => {
             if (g.id !== msg.chat_id) return g
             return {
               ...g,
-              last_message: {
-                content: msg.content,
-                sender_id: msg.sender_id,
-                created_at: msg.created_at,
-              },
+              last_message: { content: msg.content, sender_id: msg.sender_id, created_at: msg.created_at },
               unread_count: msg.sender_id !== uid ? (g.unread_count ?? 0) + 1 : g.unread_count,
             }
           }).sort((a, b) => {
@@ -392,21 +616,12 @@ export default function ChatsScreen() {
         })
         refreshMessages()
       })
-      // ── Group: member removed (leave / kick) ──────────────────────────────────
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_chat_members', filter: `user_id=eq.${uid}` }, () => {
-        loadAll()
-      })
-      // ── Group: host deleted the activity → chat gone for everyone ─────────────
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_chat_members', filter: `user_id=eq.${uid}` }, () => loadAll())
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'activity_chats' }, (payload) => {
         const deletedId = (payload.old as any)?.id
-        if (deletedId) {
-          setGroupChats((prev) => prev.filter((g) => g.id !== deletedId))
-        }
+        if (deletedId) setGroupChats((prev) => prev.filter((g) => g.id !== deletedId))
       })
-      // ── Group: joined a new activity chat ─────────────────────────────────────
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_chat_members', filter: `user_id=eq.${uid}` }, () => {
-        loadAll()
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_chat_members', filter: `user_id=eq.${uid}` }, () => loadAll())
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -415,28 +630,30 @@ export default function ChatsScreen() {
   // ── Unified sorted list ──────────────────────────────────────────────────────
 
   const allChats = useMemo<ChatItem[]>(() => {
-    const dms: ChatItem[] = conversations.map((c) => ({
-      kind: 'dm',
-      id: `dm-${c.id}`,
-      data: c,
-      sortKey: c.last_message ? new Date(c.last_message.created_at).getTime() : new Date(c.created_at).getTime(),
-    }))
-    const groups: ChatItem[] = groupChats.map((g) => ({
-      kind: 'group',
-      id: `group-${g.id}`,
-      data: g,
-      sortKey: g.last_message ? new Date(g.last_message.created_at).getTime() : new Date(g.created_at).getTime(),
-    }))
+    const dms: ChatItem[] = conversations
+      .filter((cv) => !hiddenDmIds.has(cv.id))
+      .map((cv) => ({
+        kind: 'dm',
+        id: `dm-${cv.id}`,
+        data: cv,
+        sortKey: cv.last_message ? new Date(cv.last_message.created_at).getTime() : new Date(cv.created_at).getTime(),
+      }))
+    const groups: ChatItem[] = groupChats
+      .filter((g) => !hiddenGroupIds.has(g.id))
+      .map((g) => ({
+        kind: 'group',
+        id: `group-${g.id}`,
+        data: g,
+        sortKey: g.last_message ? new Date(g.last_message.created_at).getTime() : new Date(g.created_at).getTime(),
+      }))
     return [...dms, ...groups].sort((a, b) => b.sortKey - a.sortKey)
-  }, [conversations, groupChats])
+  }, [conversations, groupChats, hiddenGroupIds, hiddenDmIds])
 
   const filtered = useMemo<ChatItem[]>(() => {
     const q = query.trim().toLowerCase()
     if (!q) return allChats
     return allChats.filter((item) => {
-      if (item.kind === 'dm') {
-        return item.data.other_profile?.username?.toLowerCase().includes(q)
-      }
+      if (item.kind === 'dm') return item.data.other_profile?.username?.toLowerCase().includes(q)
       return item.data.activity?.title?.toLowerCase().includes(q)
     })
   }, [allChats, query])
@@ -449,23 +666,31 @@ export default function ChatsScreen() {
     setRefreshing(false)
   }
 
-  const onDeleteConversation = (conversationId: string) => {
-    Alert.alert('Delete conversation', 'This will permanently delete all messages.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          await chatService.deleteConversation(conversationId)
-          setConversations((prev) => prev.filter((c) => c.id !== conversationId))
-          refreshMessages()
+  const onHideDm = (conversationId: string) => {
+    setHiddenDmIds((prev) => { const next = new Set(prev); next.add(conversationId); return next })
+  }
+
+  const onClearDmForMe = (conversationId: string) => {
+    Alert.alert(
+      'Delete for me',
+      'Your message history will be cleared. The other person keeps their messages. New messages from them will still arrive.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete for me', style: 'destructive',
+          onPress: async () => {
+            await chatService.clearForUser(conversationId, user!.id)
+            setConversations((prev) => prev.filter((cv) => cv.id !== conversationId))
+            refreshMessages()
+          },
         },
-      },
-    ])
+      ]
+    )
   }
 
   const onMuteDM = async (conversationId: string, muted: boolean) => {
     await chatService.setConversationMuted(conversationId, user!.id, muted)
-    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, muted } : c)))
+    setConversations((prev) => prev.map((cv) => (cv.id === conversationId ? { ...cv, muted } : cv)))
   }
 
   const onMuteGroup = async (chatId: string, muted: boolean) => {
@@ -473,26 +698,56 @@ export default function ChatsScreen() {
     setGroupChats((prev) => prev.map((g) => (g.id === chatId ? { ...g, muted } : g)))
   }
 
+  const onHideGroup = (chatId: string) => {
+    setHiddenGroupIds((prev) => { const next = new Set(prev); next.add(chatId); return next })
+  }
+
+  const onLeaveGroup = (chatId: string) => {
+    Alert.alert('Leave Group', 'You will no longer receive messages from this group.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave', style: 'destructive',
+        onPress: async () => {
+          await groupChatService.leaveGroup(chatId, user!.id)
+          setGroupChats((prev) => prev.filter((g) => g.id !== chatId))
+        },
+      },
+    ])
+  }
+
+  const onDeleteGroup = (chatId: string) => {
+    Alert.alert('Delete Group', 'This will permanently delete the group chat and all messages for everyone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await groupChatService.deleteGroup(chatId)
+          setGroupChats((prev) => prev.filter((g) => g.id !== chatId))
+        },
+      },
+    ])
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
 
-        {/* ── Header ── */}
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
+        {/* Header */}
+        <View style={[s.header, { backgroundColor: colors.background }]}>
           <Text style={[typography.h2, { color: colors.text }]}>Messages</Text>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.bellBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.7}>
+          <View style={s.headerRight}>
+            <TouchableOpacity style={s.bellBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.7}>
               <Ionicons name='notifications-outline' size={22} color={colors.text} />
               {bellBadge > 0 && (
-                <View style={[styles.bellBadge, { backgroundColor: colors.error }]}>
-                  <Text style={styles.bellBadgeText}>{bellBadge > 9 ? '9+' : bellBadge}</Text>
+                <View style={[s.bellBadge, { backgroundColor: colors.error }]}>
+                  <Text style={s.bellBadgeText}>{bellBadge > 9 ? '9+' : bellBadge}</Text>
                 </View>
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.composeBtn, { backgroundColor: colors.primary }]}
+              style={[s.composeBtn, { backgroundColor: colors.primary }]}
               onPress={() => router.push('/chat/new' as any)}
             >
               <Ionicons name='create-outline' size={18} color='#fff' />
@@ -500,12 +755,12 @@ export default function ChatsScreen() {
           </View>
         </View>
 
-        {/* ── Search bar ── */}
-        <View style={[styles.searchWrap, { backgroundColor: colors.background }]}>
-          <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
+        {/* Search */}
+        <View style={[s.searchWrap, { backgroundColor: colors.background }]}>
+          <View style={[s.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
             <Ionicons name='search-outline' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
             <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
+              style={[s.searchInput, { color: colors.text }]}
               placeholder='Search chats…'
               placeholderTextColor={colors.textMuted}
               value={query}
@@ -513,7 +768,6 @@ export default function ChatsScreen() {
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
               returnKeyType='search'
-              clearButtonMode='never'
               autoCorrect={false}
               autoCapitalize='none'
             />
@@ -525,35 +779,24 @@ export default function ChatsScreen() {
           </View>
         </View>
 
-        {/* ── List ── */}
+        {/* List */}
         {loading && !refreshing ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xxl }} />
         ) : filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
-              <Ionicons
-                name={query ? 'search-outline' : 'chatbubbles-outline'}
-                size={32}
-                color={colors.textMuted}
-              />
+          <View style={s.empty}>
+            <View style={[s.emptyIcon, { backgroundColor: colors.surface }]}>
+              <Ionicons name={query ? 'search-outline' : 'chatbubbles-outline'} size={32} color={colors.textMuted} />
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              {query ? 'No results' : 'No chats yet'}
-            </Text>
-            <Text style={[styles.emptyHint, { color: colors.textMuted }]}>
-              {query
-                ? `Nothing matched "${query}"`
-                : 'Start a conversation or join an activity to chat'
-              }
+            <Text style={[s.emptyTitle, { color: colors.text }]}>{query ? 'No results' : 'No chats yet'}</Text>
+            <Text style={[s.emptyHint, { color: colors.textMuted }]}>
+              {query ? `Nothing matched "${query}"` : 'Start a conversation or join an activity to chat'}
             </Text>
           </View>
         ) : (
           <FlatList
             data={filtered}
-            extraData={filtered}
             keyExtractor={(item) => item.id}
-            onScrollBeginDrag={() => openSwipeRef.current?.close()}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={s.listContent}
             keyboardShouldPersistTaps='handled'
             renderItem={({ item }) => {
               if (item.kind === 'group') {
@@ -561,9 +804,7 @@ export default function ChatsScreen() {
                   <GroupChatCard
                     chat={item.data}
                     colors={colors}
-                    currentUserId={user?.id ?? ''}
-                    onMuteToggle={(muted) => onMuteGroup(item.data.id, muted)}
-                    openSwipeRef={openSwipeRef}
+                    onLongPress={() => setGroupSheet(item.data)}
                   />
                 )
               }
@@ -572,63 +813,64 @@ export default function ChatsScreen() {
                   conversation={item.data}
                   colors={colors}
                   currentUserId={user?.id ?? ''}
-                  onDelete={() => onDeleteConversation(item.data.id)}
-                  onMuteToggle={(muted) => onMuteDM(item.data.id, muted)}
-                  openSwipeRef={openSwipeRef}
+                  onLongPress={() => setDmSheet(item.data)}
                 />
               )
             }}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           />
         )}
 
       </View>
+
+      {/* Group action sheet */}
+      {groupSheet && user && (
+        <GroupActionSheet
+          chat={groupSheet}
+          currentUserId={user.id}
+          colors={colors}
+          onClose={() => setGroupSheet(null)}
+          onHide={() => { onHideGroup(groupSheet.id); setGroupSheet(null) }}
+          onMuteToggle={(muted) => { onMuteGroup(groupSheet.id, muted); setGroupSheet(null) }}
+          onLeave={() => { setGroupSheet(null); onLeaveGroup(groupSheet.id) }}
+          onDelete={() => { setGroupSheet(null); onDeleteGroup(groupSheet.id) }}
+        />
+      )}
+
+      {/* DM action sheet */}
+      {dmSheet && user && (
+        <DmActionSheet
+          conversation={dmSheet}
+          currentUserId={user.id}
+          colors={colors}
+          onClose={() => setDmSheet(null)}
+          onHide={() => { onHideDm(dmSheet.id); setDmSheet(null) }}
+          onMuteToggle={(muted) => { onMuteDM(dmSheet.id, muted); setDmSheet(null) }}
+          onClearForMe={() => { setDmSheet(null); onClearDmForMe(dmSheet.id) }}
+        />
+      )}
+
     </SafeAreaView>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   safe: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   bellBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   bellBadge: { position: 'absolute', top: 1, right: 1, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
-  bellBadgeText: { fontSize: 9, fontWeight: '700', color: '#FFFFFF' },
+  bellBadgeText: { fontSize: 9, fontWeight: '700', color: '#fff' },
   composeBtn: { width: 34, height: 34, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-
-  searchWrap: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    height: 40,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    padding: 0,
-    textAlignVertical: 'center',
-    includeFontPadding: false,
-  },
-
+  searchWrap: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.full, borderWidth: 1, paddingHorizontal: spacing.md, height: 40 },
+  searchInput: { flex: 1, fontSize: 15, padding: 0, textAlignVertical: 'center', includeFontPadding: false },
   listContent: { paddingTop: spacing.sm, paddingBottom: 120 },
-
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: spacing.sm },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
   emptyTitle: { fontSize: 18, fontWeight: '600' },

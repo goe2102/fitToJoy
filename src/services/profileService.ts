@@ -58,7 +58,7 @@ export const profileService = {
         .from('activities')
         .select('*', { count: 'exact', head: true })
         .eq('host_id', userId)
-        .eq('status', 'active'),
+        .in('status', ['active', 'finished']),
     ])
 
     return {

@@ -71,6 +71,9 @@ export function notificationText(n: Notification): string {
     case 'activity_updated': return `"${p.activity_title}" has been updated`
     case 'activity_cancelled': return `"${p.activity_title}" was cancelled`
     case 'kicked_from_activity': return `You were removed from "${p.activity_title}"`
+    case 'new_message': return `@${p.from_username}: ${p.preview}`
+    case 'new_group_message': return `@${p.from_username} in ${p.chat_title}: ${p.preview}`
+    case 'activity_started': return `"${p.activity_title}" has started!`
     default: return 'New notification'
   }
 }
@@ -86,6 +89,9 @@ export function notificationIcon(type: NotificationType): string {
     case 'activity_updated': return 'create-outline'
     case 'activity_cancelled': return 'ban-outline'
     case 'kicked_from_activity': return 'remove-circle-outline'
+    case 'new_message':       return 'chatbubble-outline'
+    case 'new_group_message': return 'chatbubbles-outline'
+    case 'activity_started':  return 'play-circle-outline'
     default: return 'notifications-outline'
   }
 }

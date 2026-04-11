@@ -107,7 +107,7 @@ export default function ChatScreen() {
     const convs = await chatService.getConversations(user.id)
     const conv = convs.data.find((c) => c.id === id) ?? null
     setConversation(conv)
-    const { data } = await chatService.getMessages(id)
+    const { data } = await chatService.getMessages(id, conv?.cleared_at)
     setMessages(data)
     setLoading(false)
     await chatService.markMessagesRead(id, user.id)

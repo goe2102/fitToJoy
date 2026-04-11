@@ -5,10 +5,13 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  TextInput,
 } from 'react-native'
 import { imageService } from '@/services/imageService'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -21,6 +24,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { profileService } from '@/services/profileService'
 import { activityService } from '@/services/activityService'
+import { ratingService } from '@/services/ratingService'
 import { supabase } from '../../lib/supabase'
 import { Badge } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
@@ -190,6 +194,181 @@ function makeActivityCardStyles(colors: AppColors) {
   })
 }
 
+// ─── Past Activity Card ───────────────────────────────────────────────────────
+
+function PastActivityCard({
+  entry,
+  colors,
+}: {
+  entry: { activity: { id: string; title: string; date: string; host_id: string; host_username: string; host_avatar_url: string | null }; myRating: any; canRate: boolean }
+  colors: AppColors
+}) {
+  const rated = !!entry.myRating
+  return (
+    <TouchableOpacity
+      style={{
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        marginBottom: spacing.sm,
+        borderWidth: 1,
+        borderColor: colors.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+      }}
+      onPress={() => router.push(`/past-activity/${entry.activity.id}` as any)}
+      activeOpacity={0.75}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>{entry.activity.title}</Text>
+        <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
+          Host: @{entry.activity.host_username} · {new Date(entry.activity.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        </Text>
+        {rated && (
+          <View style={{ flexDirection: 'row', gap: 3, marginTop: 4 }}>
+            {[1,2,3,4,5].map((s) => (
+              <Ionicons key={s} name={s <= entry.myRating.rating ? 'star' : 'star-outline'} size={12} color={s <= entry.myRating.rating ? '#FFD60A' : colors.border} />
+            ))}
+          </View>
+        )}
+      </View>
+      <View style={{
+        backgroundColor: rated ? colors.success + '18' : colors.primary + '18',
+        borderRadius: radius.full,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 4,
+      }}>
+        <Text style={[typography.caption, { color: rated ? colors.success : colors.primary, fontWeight: '700' }]}>
+          {rated ? 'Rated' : 'Rate'}
+        </Text>
+      </View>
+      <Ionicons name='chevron-forward' size={16} color={colors.textMuted} />
+    </TouchableOpacity>
+  )
+}
+
+// ─── Activities Modal ─────────────────────────────────────────────────────────
+
+function ActivitiesModal({
+  visible,
+  userId,
+  onClose,
+  colors,
+}: {
+  visible: boolean
+  userId: string
+  onClose: () => void
+  colors: AppColors
+}) {
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [loading, setLoading] = useState(false)
+  const [query, setQuery] = useState('')
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (!visible) return
+    setLoading(true)
+    setQuery('')
+    supabase
+      .from('activities')
+      .select('*')
+      .eq('host_id', userId)
+      .in('status', ['active', 'finished'])
+      .order('date', { ascending: false })
+      .then(({ data }) => {
+        setActivities((data as any) ?? [])
+        setLoading(false)
+      })
+  }, [visible, userId])
+
+  const filtered = query.trim()
+    ? activities.filter((a) => a.title.toLowerCase().includes(query.toLowerCase()))
+    : activities
+
+  return (
+    <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+          <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>My Activities</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search bar */}
+        <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceElevated, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: focused ? colors.primary : colors.border }}>
+            <Ionicons name='search' size={16} color={focused ? colors.primary : colors.textMuted} />
+            <TextInput
+              style={{ flex: 1, color: colors.text, fontSize: 15, padding: 0 }}
+              placeholder='Search activities…'
+              placeholderTextColor={colors.textMuted}
+              value={query}
+              onChangeText={setQuery}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              autoCorrect={false}
+              autoCapitalize='none'
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+                <Ionicons name='close-circle' size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+        ) : filtered.length === 0 ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingBottom: 60 }}>
+            <Ionicons name='calendar-outline' size={36} color={colors.textMuted} />
+            <Text style={[typography.body, { color: colors.textMuted }]}>
+              {query ? 'No results' : 'No hosted activities'}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(a) => a.id}
+            contentContainerStyle={{ padding: spacing.md, paddingTop: spacing.sm }}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={{ backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
+                onPress={() => {
+                  onClose()
+                  if (item.status === 'finished') {
+                    router.push(`/past-activity/${item.id}` as any)
+                  } else {
+                    router.push(`/activity/${item.id}` as any)
+                  }
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
+                  <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                    {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: item.status === 'finished' ? colors.success + '18' : colors.primary + '18', borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
+                  <Text style={[typography.caption, { color: item.status === 'finished' ? colors.success : colors.primary, fontWeight: '700' }]}>
+                    {item.status === 'finished' ? 'Finished' : 'Active'}
+                  </Text>
+                </View>
+                <Ionicons name='chevron-forward' size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          />
+        )}
+      </View>
+    </Modal>
+  )
+}
+
 // ─── Stat Pill ────────────────────────────────────────────────────────────────
 
 function StatPill({
@@ -222,7 +401,7 @@ function makeStatStyles(colors: AppColors) {
 
 // ─── Main Profile Screen ──────────────────────────────────────────────────────
 
-type ActivityTab = 'hosting' | 'joined'
+type ActivityTab = 'hosting' | 'joined' | 'past'
 
 export default function ProfileScreen() {
   const colors = useColors()
@@ -241,9 +420,11 @@ export default function ProfileScreen() {
   }
 
   const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
+  const [activitiesModal, setActivitiesModal] = useState(false)
   const [activeTab, setActiveTab] = useState<ActivityTab>('hosting')
   const [hostingActivities, setHostingActivities] = useState<Activity[]>([])
   const [joinedActivities, setJoinedActivities] = useState<Activity[]>([])
+  const [pastEntries, setPastEntries] = useState<Awaited<ReturnType<typeof ratingService.getFinishedActivitiesForRating>>['data']>([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const openSwipeRef = useRef<Swipeable | null>(null)
@@ -251,12 +432,14 @@ export default function ProfileScreen() {
   const loadActivities = useCallback(async () => {
     if (!profile) return
     setActivitiesLoading(true)
-    const [{ data: hosting }, { data: joined }] = await Promise.all([
+    const [{ data: hosting }, { data: joined }, { data: past }] = await Promise.all([
       profileService.getUserActivities(profile.id),
       profileService.getJoinedActivities(profile.id),
+      ratingService.getFinishedActivitiesForRating(profile.id),
     ])
     setHostingActivities(hosting)
     setJoinedActivities(joined)
+    setPastEntries(past)
     setActivitiesLoading(false)
   }, [profile?.id])
 
@@ -312,6 +495,8 @@ export default function ProfileScreen() {
   }
 
   const displayedActivities = activeTab === 'hosting' ? hostingActivities : joinedActivities
+  // Past tab only shows activities the user participated in (not hosted)
+  const participatedPastEntries = pastEntries.filter((e) => e.canRate)
 
   if (loading) {
     return (
@@ -374,6 +559,17 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <Text style={styles.username}>@{profile?.username ?? '—'}</Text>
+          {profile && profile.rating_count > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+              <Ionicons name='star' size={14} color='#FFD60A' />
+              <Text style={[typography.bodySmall, { color: colors.text, fontWeight: '700' }]}>
+                {profile.average_rating?.toFixed(1)}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                ({profile.rating_count})
+              </Text>
+            </View>
+          )}
           {profile?.bio
             ? <Text style={styles.bio}>{profile.bio}</Text>
             : (
@@ -392,60 +588,82 @@ export default function ProfileScreen() {
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <StatPill label='Following' value={stats.following_count} colors={colors} onPress={() => setFollowModal('following')} />
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <StatPill label='Activities' value={stats.activity_count} colors={colors} />
+          <StatPill label='Activities' value={stats.activity_count} colors={colors} onPress={() => setActivitiesModal(true)} />
         </View>
 
         {/* ── Activities ── */}
         <View style={styles.section}>
           {/* Tab bar */}
           <View style={[styles.tabBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {(['hosting', 'joined'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tabItem, activeTab === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
-                onPress={() => setActiveTab(tab)}
-                activeOpacity={0.7}
-              >
-                <Text style={[typography.label, { color: activeTab === tab ? colors.primary : colors.textMuted }]}>
-                  {tab === 'hosting' ? 'Hosting' : 'Joined'}
-                </Text>
-                {(tab === 'hosting' ? hostingActivities : joinedActivities).length > 0 && (
-                  <View style={[styles.tabBadge, { backgroundColor: activeTab === tab ? colors.primary : colors.border }]}>
-                    <Text style={[styles.tabBadgeText, { color: activeTab === tab ? '#fff' : colors.textMuted }]}>
-                      {(tab === 'hosting' ? hostingActivities : joinedActivities).length}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+            {(['hosting', 'joined', 'past'] as const).map((tab) => {
+              const count = tab === 'hosting' ? hostingActivities.length : tab === 'joined' ? joinedActivities.length : participatedPastEntries.length
+              const label = tab === 'hosting' ? 'Hosting' : tab === 'joined' ? 'Joined' : 'Past'
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.tabItem, activeTab === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+                  onPress={() => setActiveTab(tab)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[typography.label, { color: activeTab === tab ? colors.primary : colors.textMuted }]}>
+                    {label}
+                  </Text>
+                  {count > 0 && (
+                    <View style={[styles.tabBadge, { backgroundColor: activeTab === tab ? colors.primary : colors.border }]}>
+                      <Text style={[styles.tabBadgeText, { color: activeTab === tab ? '#fff' : colors.textMuted }]}>
+                        {count}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )
+            })}
           </View>
 
           {activitiesLoading
             ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
-            : displayedActivities.length === 0
-              ? (
-                <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Ionicons name='calendar-outline' size={32} color={colors.textMuted} />
-                  <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>
-                    {activeTab === 'hosting' ? 'No active activities' : 'Not joined any activities'}
-                  </Text>
-                  <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
-                    {activeTab === 'hosting'
-                      ? 'Tap + New to create one'
-                      : 'Find activities on the map and join them'}
-                  </Text>
-                </View>
-              )
-              : displayedActivities.map((a) => (
-                <ActivityCard
-                  key={a.id}
-                  activity={a}
-                  colors={colors}
-                  variant={activeTab}
-                  onDelete={activeTab === 'hosting' ? () => onDeleteActivity(a) : undefined}
-                  openSwipeRef={openSwipeRef}
-                />
-              ))
+            : activeTab === 'past'
+              ? participatedPastEntries.length === 0
+                ? (
+                  <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Ionicons name='trophy-outline' size={32} color={colors.textMuted} />
+                    <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>No finished activities yet</Text>
+                    <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
+                      Activities you participated in will appear here once finished
+                    </Text>
+                  </View>
+                )
+                : participatedPastEntries.map((entry) => (
+                  <PastActivityCard
+                    key={entry.activity.id}
+                    entry={entry}
+                    colors={colors}
+                  />
+                ))
+              : displayedActivities.length === 0
+                ? (
+                  <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Ionicons name='calendar-outline' size={32} color={colors.textMuted} />
+                    <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>
+                      {activeTab === 'hosting' ? 'No active activities' : 'Not joined any activities'}
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
+                      {activeTab === 'hosting'
+                        ? 'Tap + New to create one'
+                        : 'Find activities on the map and join them'}
+                    </Text>
+                  </View>
+                )
+                : displayedActivities.map((a) => (
+                  <ActivityCard
+                    key={a.id}
+                    activity={a}
+                    colors={colors}
+                    variant={activeTab as 'hosting' | 'joined'}
+                    onDelete={activeTab === 'hosting' ? () => onDeleteActivity(a) : undefined}
+                    openSwipeRef={openSwipeRef}
+                  />
+                ))
           }
         </View>
 
@@ -459,6 +677,15 @@ export default function ProfileScreen() {
           targetUserId={profile.id}
           currentUserId={user.id}
           type={followModal}
+        />
+      )}
+
+      {profile && (
+        <ActivitiesModal
+          visible={activitiesModal}
+          userId={profile.id}
+          onClose={() => setActivitiesModal(false)}
+          colors={colors}
         />
       )}
     </SafeAreaView>

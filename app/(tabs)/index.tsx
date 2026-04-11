@@ -16,6 +16,7 @@ import MapView, {
   PROVIDER_DEFAULT,
   type Region,
 } from 'react-native-maps'
+import Supercluster from 'supercluster'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -104,6 +105,36 @@ function ActivityMarker({
         </View>
         {/* Teardrop tail */}
         <View style={[mStyles.tail, { borderTopColor: accent }]} />
+      </TouchableOpacity>
+    </Marker>
+  )
+}
+
+// ─── Cluster Marker ───────────────────────────────────────────────────────────
+
+function ClusterMarker({
+  count,
+  coordinate,
+  colors,
+  onPress,
+}: {
+  count: number
+  coordinate: { latitude: number; longitude: number }
+  colors: AppColors
+  onPress: () => void
+}) {
+  // Scale cluster bubble slightly with count
+  const size = count < 10 ? 42 : count < 50 ? 50 : 58
+  return (
+    <Marker coordinate={coordinate} onPress={onPress} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+        {/* Outer ring */}
+        <View style={[mStyles.clusterOuter, { width: size + 14, height: size + 14, borderRadius: (size + 14) / 2, borderColor: colors.primary + '40' }]}>
+          {/* Inner filled circle */}
+          <View style={[mStyles.clusterInner, { width: size, height: size, borderRadius: size / 2, backgroundColor: colors.primary }]}>
+            <Text style={mStyles.clusterText}>{count}</Text>
+          </View>
+        </View>
       </TouchableOpacity>
     </Marker>
   )
@@ -780,36 +811,40 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null)
 
   const [activities, setActivities] = useState<Activity[]>([])
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null)
+  const [detailVisible, setDetailVisible] = useState(false)
+  const [region, setRegion] = useState<Region>({
+    latitude: 48.1351,
+    longitude: 11.582,
+    latitudeDelta: 0.08,
+    longitudeDelta: 0.08,
+  })
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Offset markers that share the exact same coordinates so they don't stack
-  const jitteredActivities = useMemo(() => {
-    const groups: Record<string, number[]> = {}
-    activities.forEach((a, i) => {
-      const key = `${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}`
-      if (!groups[key]) groups[key] = []
-      groups[key].push(i)
-    })
-    return activities.map((a, i) => {
-      const key = `${a.latitude.toFixed(5)},${a.longitude.toFixed(5)}`
-      const group = groups[key]
-      if (group.length <= 1) return a
-      const idx = group.indexOf(i)
-      const angle = (2 * Math.PI * idx) / group.length
-      const r = 0.00035
-      return {
-        ...a,
-        latitude: a.latitude + r * Math.cos(angle),
-        longitude: a.longitude + r * Math.sin(angle),
-      }
-    })
+  // ── Supercluster instance — rebuilt only when activities list changes ──
+  const supercluster = useMemo(() => {
+    const sc = new Supercluster<{ activity: Activity }>({ radius: 60, maxZoom: 15, minZoom: 1 })
+    sc.load(
+      activities.map((a) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [a.longitude, a.latitude] },
+        properties: { activity: a },
+      }))
+    )
+    return sc
   }, [activities])
 
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
-    null
-  )
-  const [detailVisible, setDetailVisible] = useState(false)
-  const [mapCenter, setMapCenter] = useState({ lat: 48.1351, lng: 11.582 })
-  const [refreshing, setRefreshing] = useState(false)
+  // ── Clusters — recomputed on region change ──
+  const clusters = useMemo(() => {
+    const bbox: [number, number, number, number] = [
+      region.longitude - region.longitudeDelta / 2,
+      region.latitude - region.latitudeDelta / 2,
+      region.longitude + region.longitudeDelta / 2,
+      region.latitude + region.latitudeDelta / 2,
+    ]
+    const zoom = Math.round(Math.log2(360 / region.latitudeDelta))
+    return supercluster.getClusters(bbox, Math.max(0, Math.min(zoom, 20)))
+  }, [supercluster, region])
 
   const loadActivities = useCallback(async () => {
     if (!user) return

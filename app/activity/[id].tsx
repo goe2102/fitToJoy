@@ -163,7 +163,7 @@ function EditModal({
   colors: AppColors
 }) {
   const insets = useSafeAreaInsets()
-  const isDark = colors.background === '#0F0F14'
+  const isDark = colors.text === '#F2F2F8'
 
   const [title, setTitle] = useState(activity.title)
   const [description, setDescription] = useState(activity.description ?? '')
@@ -264,7 +264,7 @@ function EditModal({
               <Ionicons name={activePicker === 'date' ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
             </TouchableOpacity>
             {activePicker === 'date' && (
-              <View style={[styles.pickerInline, { borderTopColor: colors.border }]}>
+              <View style={[styles.pickerInline, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
                 <DateTimePicker
                   mode='date'
                   value={date}
@@ -272,6 +272,7 @@ function EditModal({
                   display={Platform.OS === 'ios' ? 'inline' : 'default'}
                   onChange={(_, d) => { if (d) setDate(d); if (Platform.OS !== 'ios') togglePicker(null) }}
                   themeVariant={isDark ? 'dark' : 'light'}
+                  accentColor={colors.primary}
                   style={{ alignSelf: 'center' }}
                 />
               </View>
@@ -293,13 +294,15 @@ function EditModal({
               <Ionicons name={activePicker === 'time' ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
             </TouchableOpacity>
             {activePicker === 'time' && (
-              <View style={[styles.pickerInline, { borderTopColor: colors.border, alignItems: 'center' }]}>
+              <View style={[styles.pickerInline, { borderTopColor: colors.border, alignItems: 'center', backgroundColor: colors.surface }]}>
                 <DateTimePicker
                   mode='time'
                   value={time}
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={(_, t) => { if (t) setTime(t); if (Platform.OS !== 'ios') togglePicker(null) }}
                   themeVariant={isDark ? 'dark' : 'light'}
+                  accentColor={colors.primary}
+                  textColor={colors.text}
                   style={{ width: 200 }}
                 />
               </View>
@@ -504,10 +507,12 @@ export default function ActivityManageScreen() {
     )
   }
 
-  const isDark = colors.background === '#0F0F14'
+  const isDark = colors.text === '#F2F2F8'
   const isHost = activity?.host_id === user?.id
   const isParticipant = joined.some((p) => p.user_id === user?.id)
   const isWaitlisted = myStatus === 'waitlisted'
+  const hasStarted = activity ? activityService.msUntilStart(activity.date, activity.start_time) <= 0 : false
+  const canEdit = isHost && !hasStarted && activity?.status === 'active'
 
   if (loading) {
     return (
@@ -568,7 +573,7 @@ export default function ActivityManageScreen() {
                 <Ionicons name='chevron-back' size={22} color='#fff' />
               </TouchableOpacity>
               <View style={{ flex: 1 }} />
-              {isHost ? (
+              {canEdit ? (
                 <TouchableOpacity style={styles.heroBtn} onPress={() => setEditVisible(true)} activeOpacity={0.8}>
                   <Ionicons name='pencil-outline' size={18} color='#fff' />
                 </TouchableOpacity>
@@ -590,7 +595,7 @@ export default function ActivityManageScreen() {
               <Ionicons name='chevron-back' size={26} color={colors.text} />
             </TouchableOpacity>
             <View style={{ flex: 1 }} />
-            {isHost ? (
+            {canEdit ? (
               <TouchableOpacity onPress={() => setEditVisible(true)} hitSlop={12}>
                 <Ionicons name='pencil-outline' size={22} color={colors.primary} />
               </TouchableOpacity>
@@ -778,8 +783,44 @@ export default function ActivityManageScreen() {
           </View>
         )}
 
-        {/* ── Delete activity (host only) ── */}
-        {isHost && (
+        {/* ── Mark as Finished (host only, after start time) ── */}
+        {isHost && activity.status === 'active' && activityService.msUntilStart(activity.date, activity.start_time) <= 0 && (
+          <TouchableOpacity
+            style={[styles.deleteBtn, { borderColor: colors.success + '50', marginBottom: spacing.sm }]}
+            onPress={() => {
+              Alert.alert(
+                'Mark as Finished',
+                'Mark this activity as finished? Participants will be able to rate you.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Finish',
+                    onPress: async () => {
+                      const { error } = await activityService.markAsFinished(activity.id)
+                      if (error) { Alert.alert('Error', error.message); return }
+                      setActivity((a) => a ? { ...a, status: 'finished' } : a)
+                    },
+                  },
+                ]
+              )
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name='checkmark-circle-outline' size={16} color={colors.success} />
+            <Text style={[typography.label, { color: colors.success }]}>Mark as Finished</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Finished banner ── */}
+        {activity.status === 'finished' && (
+          <View style={[styles.deleteBtn, { borderColor: colors.success + '50', opacity: 0.7 }]}>
+            <Ionicons name='checkmark-circle' size={16} color={colors.success} />
+            <Text style={[typography.label, { color: colors.success }]}>Activity Finished</Text>
+          </View>
+        )}
+
+        {/* ── Delete activity (host only, before start) ── */}
+        {canEdit && (
           <TouchableOpacity
             style={[styles.deleteBtn, { borderColor: colors.error + '50' }]}
             onPress={() => {

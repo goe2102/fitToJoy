@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
   Modal,
   TextInput as RNTextInput,
   InteractionManager,
@@ -129,6 +130,72 @@ const groupBubbleS = StyleSheet.create({
   text: { fontSize: 15, lineHeight: 22 },
   time: { fontSize: 11, marginTop: 4, marginHorizontal: 4 },
 })
+
+// ─── Group Options Modal ──────────────────────────────────────────────────────
+
+function GroupOptionsModal({
+  visible,
+  onClose,
+  isHost,
+  muted,
+  onToggleMute,
+  onLeave,
+  onDelete,
+  colors,
+}: {
+  visible: boolean
+  onClose: () => void
+  isHost: boolean
+  muted: boolean
+  onToggleMute: () => void
+  onLeave: () => void
+  onDelete: () => void
+  colors: AppColors
+}) {
+  return (
+    <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+          <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>Chat Options</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ padding: spacing.md, gap: spacing.sm }}>
+          {/* Mute row */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border }}
+            onPress={() => { onToggleMute(); onClose() }}
+            activeOpacity={0.75}
+          >
+            <View style={{ width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name={muted ? 'notifications-outline' : 'notifications-off-outline'} size={18} color={colors.primary} />
+            </View>
+            <Text style={[typography.label, { color: colors.text, flex: 1 }]}>
+              {muted ? 'Unmute notifications' : 'Mute notifications'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Leave / Delete row */}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.error + '10', borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.error + '30' }}
+            onPress={() => { onClose(); isHost ? onDelete() : onLeave() }}
+            activeOpacity={0.75}
+          >
+            <View style={{ width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.error + '18', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name={isHost ? 'trash-outline' : 'exit-outline'} size={18} color={colors.error} />
+            </View>
+            <Text style={[typography.label, { color: colors.error, flex: 1 }]}>
+              {isHost ? 'Delete group' : 'Leave group'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  )
+}
 
 // ─── Members Modal ────────────────────────────────────────────────────────────
 
@@ -310,12 +377,22 @@ export default function GroupChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
 
   const [messages, setMessages] = useState<GroupMessage[]>([])
-  const [chatInfo, setChatInfo] = useState<{ activityTitle: string; activityId: string; hostId: string } | null>(null)
+  const [chatInfo, setChatInfo] = useState<{
+    activityTitle: string
+    activityId: string
+    hostId: string
+    coverImageUrl: string | null
+    date?: string
+    startTime?: string
+    durationMinutes?: number
+    status?: string
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [muted, setMuted] = useState(false)
   const [membersVisible, setMembersVisible] = useState(false)
+  const [optionsVisible, setOptionsVisible] = useState(false)
   const listRef = useRef<FlatList>(null)
 
   const load = useCallback(async () => {
@@ -326,7 +403,7 @@ export default function GroupChatScreen() {
       groupChatService.getMessages(id),
       supabase
         .from('activity_chats')
-        .select('activity_id, activity:activities!activity_chats_activity_id_fkey(id, title, host_id)')
+        .select('activity_id, activity:activities!activity_chats_activity_id_fkey(id, title, host_id, cover_image_url, date, start_time, duration_minutes, status)')
         .eq('id', id)
         .single(),
       groupChatService.getMuted(id, user.id),
@@ -341,6 +418,11 @@ export default function GroupChatScreen() {
         activityTitle: act.title,
         activityId: act.id,
         hostId: act.host_id,
+        coverImageUrl: act.cover_image_url ?? null,
+        date: act.date,
+        startTime: act.start_time,
+        durationMinutes: act.duration_minutes,
+        status: act.status,
       })
     }
 
@@ -378,6 +460,32 @@ export default function GroupChatScreen() {
     await groupChatService.setMuted(id, user.id, next)
   }
 
+  const onLeaveGroup = () => {
+    Alert.alert('Leave Group', 'You will no longer receive messages from this group.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave', style: 'destructive',
+        onPress: async () => {
+          await groupChatService.leaveGroup(id!, user!.id)
+          router.back()
+        },
+      },
+    ])
+  }
+
+  const onDeleteGroup = () => {
+    Alert.alert('Delete Group', 'This will permanently delete the group chat and all messages for everyone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await groupChatService.deleteGroup(id!)
+          router.back()
+        },
+      },
+    ])
+  }
+
   const onSend = async () => {
     const content = text.trim()
     if (!content || !user || !id || sending) return
@@ -411,26 +519,46 @@ export default function GroupChatScreen() {
           </TouchableOpacity>
 
           <View style={s.headerCenter}>
-            <View style={[s.groupIcon, { backgroundColor: colors.primary + '20' }]}>
-              <Ionicons name='people' size={16} color={colors.primary} />
+            {/* Cover image or fallback icon */}
+            {chatInfo?.coverImageUrl ? (
+              <Image source={{ uri: chatInfo.coverImageUrl }} style={s.headerImage} contentFit='cover' />
+            ) : (
+              <View style={[s.headerImagePlaceholder, { backgroundColor: colors.primary + '20' }]}>
+                <Ionicons name='people' size={16} color={colors.primary} />
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[typography.label, { color: colors.text }]} numberOfLines={1}>
+                {chatInfo?.activityTitle ?? 'Group Chat'}
+              </Text>
+              {/* Status badge */}
+              {chatInfo && (() => {
+                const now = Date.now()
+                const info = chatInfo
+                if (!info.date || !info.startTime || !info.durationMinutes) return null
+                const start = new Date(`${info.date}T${info.startTime}:00`).getTime()
+                const end = start + info.durationMinutes * 60_000
+                let label: string | null = null
+                let color = colors.textMuted
+                if (info.status === 'finished' || now >= end) {
+                  label = 'Finished'; color = colors.textMuted
+                } else if (now >= start) {
+                  label = '● Live now'; color = '#16a34a'
+                } else if (start - now <= 30 * 60_000) {
+                  label = 'Starting soon'; color = colors.primary
+                }
+                if (!label) return null
+                return <Text style={{ fontSize: 11, fontWeight: '600', color, marginTop: 1 }}>{label}</Text>
+              })()}
             </View>
-            <Text style={[typography.label, { color: colors.text, flex: 1 }]} numberOfLines={1}>
-              {chatInfo?.activityTitle ?? 'Group Chat'}
-            </Text>
           </View>
 
           <View style={s.headerActions}>
-            {/* Members */}
             <TouchableOpacity onPress={() => setMembersVisible(true)} hitSlop={12} style={s.headerBtn}>
               <Ionicons name='people-outline' size={22} color={colors.text} />
             </TouchableOpacity>
-            {/* Mute toggle */}
-            <TouchableOpacity onPress={toggleMute} hitSlop={12} style={s.headerBtn}>
-              <Ionicons
-                name={muted ? 'notifications-off-outline' : 'notifications-outline'}
-                size={22}
-                color={muted ? colors.textMuted : colors.text}
-              />
+            <TouchableOpacity onPress={() => setOptionsVisible(true)} hitSlop={12} style={s.headerBtn}>
+              <Ionicons name='ellipsis-horizontal' size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -508,6 +636,19 @@ export default function GroupChatScreen() {
           colors={colors}
         />
       )}
+
+      {chatInfo && user && (
+        <GroupOptionsModal
+          visible={optionsVisible}
+          onClose={() => setOptionsVisible(false)}
+          isHost={chatInfo.hostId === user.id}
+          muted={muted}
+          onToggleMute={toggleMute}
+          onLeave={onLeaveGroup}
+          onDelete={onDeleteGroup}
+          colors={colors}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -524,8 +665,11 @@ const s = StyleSheet.create({
   headerCenter: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
   },
-  groupIcon: {
-    width: 34, height: 34, borderRadius: 17,
+  headerImage: {
+    width: 36, height: 36, borderRadius: radius.sm,
+  },
+  headerImagePlaceholder: {
+    width: 36, height: 36, borderRadius: radius.sm,
     alignItems: 'center', justifyContent: 'center',
   },
   headerActions: { flexDirection: 'row', gap: spacing.sm },

@@ -371,7 +371,7 @@ export default function CreateActivityScreen() {
 
   // ── Main form ────────────────────────────────────────────────────────────────
 
-  const isDark = colors.background === '#0F0F14'
+  const isDark = colors.text === '#F2F2F8'
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -620,7 +620,7 @@ export default function CreateActivityScreen() {
             colors={colors}
           />
           {activePicker === 'date' && (
-            <View style={[styles.pickerInline, { borderTopColor: colors.border }]}>
+            <View style={[styles.pickerInline, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
               <DateTimePicker
                 mode='date'
                 value={date}
@@ -631,6 +631,7 @@ export default function CreateActivityScreen() {
                   if (Platform.OS !== 'ios') togglePicker(null)
                 }}
                 themeVariant={isDark ? 'dark' : 'light'}
+                accentColor={colors.primary}
                 style={{ alignSelf: 'center' }}
               />
             </View>
@@ -651,7 +652,7 @@ export default function CreateActivityScreen() {
             <View
               style={[
                 styles.pickerInline,
-                { borderTopColor: colors.border, alignItems: 'center' },
+                { borderTopColor: colors.border, alignItems: 'center', backgroundColor: colors.surface },
               ]}
             >
               <DateTimePicker
@@ -663,6 +664,8 @@ export default function CreateActivityScreen() {
                   if (Platform.OS !== 'ios') togglePicker(null)
                 }}
                 themeVariant={isDark ? 'dark' : 'light'}
+                accentColor={colors.primary}
+                textColor={colors.text}
                 style={{ width: 200 }}
               />
             </View>

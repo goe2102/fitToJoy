@@ -50,11 +50,13 @@ function ActivityCard({
   colors: ReturnType<typeof useColors>
 }) {
   return (
-    <View
+    <TouchableOpacity
       style={[
         aStyles.card,
         { backgroundColor: colors.surface, borderColor: colors.border },
       ]}
+      onPress={() => router.push(`/activity/${activity.id}` as any)}
+      activeOpacity={0.75}
     >
       <View
         style={[
@@ -90,7 +92,8 @@ function ActivityCard({
           style={{ marginRight: spacing.sm }}
         />
       )}
-    </View>
+      <Ionicons name='chevron-forward' size={14} color={colors.textMuted} style={{ marginRight: spacing.sm }} />
+    </TouchableOpacity>
   )
 }
 
@@ -429,6 +432,17 @@ export default function ProfileScreen() {
               />
             )}
           </View>
+          {profile.rating_count > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              <Ionicons name='star' size={13} color='#FFD60A' />
+              <Text style={[typography.bodySmall, { color: colors.text, fontWeight: '700' }]}>
+                {profile.average_rating?.toFixed(1)}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                ({profile.rating_count} {profile.rating_count === 1 ? 'rating' : 'ratings'})
+              </Text>
+            </View>
+          )}
           {profile.bio ? (
             <Text
               style={[

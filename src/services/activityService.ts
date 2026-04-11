@@ -291,10 +291,48 @@ export const activityService = {
     return { error }
   },
 
+  /** Returns ms until activity starts (negative if already started). */
+  msUntilStart(date: string, startTime: string): number {
+    const [y, mo, d] = date.split('-').map(Number)
+    const [h, m] = startTime.split(':').map(Number)
+    const start = new Date(y, mo - 1, d, h, m, 0, 0)
+    return start.getTime() - Date.now()
+  },
+
+  async markAsFinished(activityId: string): Promise<{ error: Error | null }> {
+    // Fetch to verify start time has passed
+    const { data: act } = await supabase
+      .from('activities')
+      .select('date, start_time, title')
+      .eq('id', activityId)
+      .single()
+
+    if (!act) return { error: new Error('Activity not found') }
+    if (activityService.msUntilStart(act.date, act.start_time) > 0) {
+      return { error: new Error('You can only mark an activity as finished after it has started.') }
+    }
+
+    const { error } = await supabase
+      .from('activities')
+      .update({ status: 'finished' })
+      .eq('id', activityId)
+
+    return { error }
+  },
+
   async updateActivity(
     activityId: string,
     updates: Partial<Pick<Activity, 'title' | 'description' | 'date' | 'start_time' | 'duration_minutes' | 'max_participants'>>
   ) {
+    const { data: act } = await supabase
+      .from('activities')
+      .select('date, start_time')
+      .eq('id', activityId)
+      .single()
+    if (act && activityService.msUntilStart(act.date, act.start_time) <= 0) {
+      return { error: new Error('This activity has already started and can no longer be edited.') }
+    }
+
     const { error } = await supabase
       .from('activities')
       .update(updates)

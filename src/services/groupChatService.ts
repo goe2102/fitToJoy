@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase'
+import { sendPushToUser } from './pushService'
 import type { ActivityChat, GroupMessage } from '@/types'
 
 // ─── Group Chat Service ────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ export const groupChatService = {
   async getMyChats(userId: string): Promise<{ data: ActivityChat[]; error: any }> {
     const { data: chats, error } = await supabase
       .from('activity_chats')
-      .select('id, activity_id, activity:activities!activity_chats_activity_id_fkey(id, title, host_id, cover_image_url)')
+      .select('id, activity_id, activity:activities!activity_chats_activity_id_fkey(id, title, host_id, cover_image_url, date, start_time, duration_minutes, status)')
 
     if (error || !chats?.length) return { data: [], error }
 
@@ -159,6 +160,41 @@ export const groupChatService = {
         : (data as any).sender
     }
 
+    if (!error) {
+      // Push to all other members who haven't muted (fire-and-forget)
+      ;(async () => {
+        const [chatRes, membersRes, muteRes, senderRes] = await Promise.all([
+          supabase
+            .from('activity_chats')
+            .select('activity:activities!activity_chats_activity_id_fkey(title)')
+            .eq('id', chatId)
+            .single(),
+          supabase
+            .from('group_chat_members')
+            .select('user_id, muted')
+            .eq('chat_id', chatId)
+            .neq('user_id', senderId),
+          supabase.from('group_chat_members').select('user_id').eq('chat_id', chatId).eq('muted', true),
+          supabase.from('profiles').select('username').eq('id', senderId).single(),
+        ])
+
+        const chatTitle = (chatRes.data?.activity as any)?.title ?? 'Group'
+        const mutedUserIds = new Set((muteRes.data ?? []).map((m: any) => m.user_id))
+        const senderUsername = senderRes.data?.username ?? 'Someone'
+        const preview = content.trim().slice(0, 60)
+
+        for (const member of membersRes.data ?? []) {
+          if (mutedUserIds.has(member.user_id)) continue
+          sendPushToUser(member.user_id, 'new_group_message', {
+            chat_id: chatId,
+            chat_title: chatTitle,
+            from_username: senderUsername,
+            preview,
+          })
+        }
+      })()
+    }
+
     return { data: data as any, error }
   },
 
@@ -205,6 +241,24 @@ export const groupChatService = {
       })),
       error,
     }
+  },
+
+  /** Leave a group chat (removes the user from group_chat_members). */
+  async leaveGroup(chatId: string, userId: string): Promise<{ error: any }> {
+    const { error } = await supabase
+      .from('group_chat_members')
+      .delete()
+      .eq('chat_id', chatId)
+      .eq('user_id', userId)
+    return { error }
+  },
+
+  /** Delete a group chat entirely (host only): messages → members → chat record. */
+  async deleteGroup(chatId: string): Promise<{ error: any }> {
+    await supabase.from('group_messages').delete().eq('chat_id', chatId)
+    await supabase.from('group_chat_members').delete().eq('chat_id', chatId)
+    const { error } = await supabase.from('activity_chats').delete().eq('id', chatId)
+    return { error }
   },
 
   /** Subscribe to new messages in a chat; resolves sender inline. */

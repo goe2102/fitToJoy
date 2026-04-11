@@ -773,11 +773,13 @@ export default function SettingsScreen() {
         onSave={onSaveBio}
         saving={bioSaving}
       />
-      <BlockedUsersModal
-        visible={blockedModal}
-        userId={user!.id}
-        onClose={() => setBlockedModal(false)}
-      />
+      {user && (
+        <BlockedUsersModal
+          visible={blockedModal}
+          userId={user.id}
+          onClose={() => setBlockedModal(false)}
+        />
+      )}
     </SafeAreaView>
   )
 }
