@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { Button, Input } from '@/components/ui'
@@ -17,6 +18,7 @@ import { radius, spacing, typography } from '@/constants/theme'
 
 export default function SignupScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { signUp } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -27,11 +29,11 @@ export default function SignupScreen() {
 
   const validate = () => {
     const e: Record<string, string> = {}
-    if (!email.trim()) e.email = 'Email is required.'
-    else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Invalid email address.'
-    if (!password) e.password = 'Password is required.'
-    else if (password.length < 8) e.password = 'At least 8 characters.'
-    if (password !== confirmPassword) e.confirm = 'Passwords do not match.'
+    if (!email.trim()) e.email = t('auth.signup.emailLabel') + ' is required.'
+    else if (!/\S+@\S+\.\S+/.test(email)) e.email = t('auth.signup.emailLabel') + ' invalid.'
+    if (!password) e.password = t('auth.signup.passwordLabel') + ' is required.'
+    else if (password.length < 8) e.password = t('auth.signup.passwordTooShort')
+    if (password !== confirmPassword) e.confirm = t('auth.signup.passwordMismatch')
     return e
   }
 
@@ -69,51 +71,51 @@ export default function SignupScreen() {
           <View style={s.logoCircle}>
             <Ionicons name='barbell-outline' size={32} color={colors.primary} />
           </View>
-          <Text style={s.title}>Create account</Text>
-          <Text style={s.subtitle}>Your fitness journey starts here.</Text>
+          <Text style={s.title}>{t('auth.signup.title')}</Text>
+          <Text style={s.subtitle}>{t('onboarding.getStarted')}</Text>
         </View>
 
         {/* Form */}
         <View style={s.form}>
           <Input
-            label='Email'
-            placeholder='you@example.com'
+            label={t('auth.signup.emailLabel')}
+            placeholder={t('auth.signup.emailPlaceholder')}
             value={email}
-            onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: '' })) }}
+            onChangeText={(v) => { setEmail(v); setErrors((e) => ({ ...e, email: '' })) }}
             keyboardType='email-address'
             autoCapitalize='none'
             error={errors.email}
           />
           <Input
-            label='Password'
-            placeholder='Min. 8 characters'
+            label={t('auth.signup.passwordLabel')}
+            placeholder={t('auth.signup.passwordPlaceholder')}
             value={password}
-            onChangeText={(t) => { setPassword(t); setErrors((e) => ({ ...e, password: '' })) }}
+            onChangeText={(v) => { setPassword(v); setErrors((e) => ({ ...e, password: '' })) }}
             secureTextEntry
             error={errors.password}
           />
           <Input
-            label='Confirm password'
-            placeholder='••••••••'
+            label={t('auth.signup.confirmPasswordLabel')}
+            placeholder={t('auth.signup.confirmPasswordPlaceholder')}
             value={confirmPassword}
-            onChangeText={(t) => { setConfirmPassword(t); setErrors((e) => ({ ...e, confirm: '' })) }}
+            onChangeText={(v) => { setConfirmPassword(v); setErrors((e) => ({ ...e, confirm: '' })) }}
             secureTextEntry
             error={errors.confirm}
           />
           {errors.general ? <Text style={s.errorText}>{errors.general}</Text> : null}
-          <Button title='Create Account' onPress={handleSignup} loading={loading} />
+          <Button title={t('auth.signup.signUp')} onPress={handleSignup} loading={loading} />
         </View>
 
         {/* Note */}
         <Text style={s.hint}>
-          You'll receive an 8-digit verification code by email after signing up.
+          {t('auth.verify.subtitle')} {t('auth.verify.instruction')}
         </Text>
 
         {/* Footer */}
         <View style={s.footer}>
-          <Text style={s.footerText}>Already have an account?</Text>
+          <Text style={s.footerText}>{t('auth.signup.hasAccount')}</Text>
           <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-            <Text style={s.footerLink}> Sign in</Text>
+            <Text style={s.footerLink}>{t('auth.signup.signIn')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

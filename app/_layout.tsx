@@ -1,3 +1,4 @@
+import '../src/i18n' // initialise i18next before any screen renders
 import { useEffect } from 'react'
 import { Stack, router, useSegments } from 'expo-router'
 import { usePushNotifications } from '../src/hooks/usePushNotifications'
@@ -35,7 +36,7 @@ function RouteGuard() {
     const seg0 = segments[0] as string | undefined
     const inAuthGroup  = seg0 === '(auth)'
     const inOnboarding = seg0 === '(onboarding)'
-    const inApp = seg0 === '(tabs)' || seg0 === 'activity' || seg0 === 'chat' || seg0 === 'profile' || seg0 === 'settings' || seg0 === 'group-chat' || seg0 === 'notifications' || seg0 === 'past-activity'
+    const inApp = seg0 === '(tabs)' || seg0 === 'activity' || seg0 === 'chat' || seg0 === 'profile' || seg0 === 'settings' || seg0 === 'group-chat' || seg0 === 'notifications' || seg0 === 'past-activity' || seg0 === 'photo-gallery' || seg0 === 'my-past-activities' || seg0 === 'activity-finished'
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login' as any)
@@ -82,6 +83,9 @@ function AppLayout() {
         <Stack.Screen name='settings' />
         <Stack.Screen name='notifications' />
         <Stack.Screen name='past-activity/[id]' />
+        <Stack.Screen name='photo-gallery' />
+        <Stack.Screen name='my-past-activities' />
+        <Stack.Screen name='activity-finished' options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       </Stack>
       <StatusBar style={resolved === 'light' ? 'dark' : 'light'} />
     </>

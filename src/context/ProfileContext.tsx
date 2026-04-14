@@ -12,7 +12,7 @@ interface ProfileContextType {
   updateAvatar: (base64: string) => Promise<{ error: Error | null }>
 }
 
-const DEFAULT_STATS: ProfileStats = { follower_count: 0, following_count: 0, activity_count: 0 }
+const DEFAULT_STATS: ProfileStats = { follower_count: 0, following_count: 0, activity_count: 0, finished_count: 0 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 

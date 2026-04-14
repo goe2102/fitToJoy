@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native'
@@ -14,10 +14,12 @@ import { Ionicons } from '@expo/vector-icons'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { ratingService } from '@/services/ratingService'
+import { ScreenHeader } from '@/components/ui'
 import { radius, spacing, typography } from '@/constants/theme'
 
 export default function MyPastActivitiesScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { user } = useAuth()
 
   const [entries, setEntries] = useState<
@@ -44,20 +46,7 @@ export default function MyPastActivitiesScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Header */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-        paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-      }}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{ width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name='arrow-back' size={20} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[typography.h3, { color: colors.text }]}>My Past Activities</Text>
-      </View>
+      <ScreenHeader title={t('myPastActivities.title')} onBack={() => router.back()} />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -77,9 +66,9 @@ export default function MyPastActivitiesScreen() {
               marginTop: spacing.xl,
             }}>
               <Ionicons name='trophy-outline' size={36} color={colors.textMuted} />
-              <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>No past activities yet</Text>
+              <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>{t('myPastActivities.empty')}</Text>
               <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
-                Activities you hosted will appear here once finished
+                {t('myPastActivities.emptyHint')}
               </Text>
             </View>
           ) : (

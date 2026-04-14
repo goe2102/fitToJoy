@@ -43,7 +43,7 @@ export const profileService = {
   },
 
   async getStats(userId: string): Promise<{ data: ProfileStats; error: Error | null }> {
-    const [followers, following, activities] = await Promise.all([
+    const [followers, following, activities, finished] = await Promise.all([
       supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
@@ -59,6 +59,11 @@ export const profileService = {
         .select('*', { count: 'exact', head: true })
         .eq('host_id', userId)
         .in('status', ['active', 'finished']),
+      supabase
+        .from('activities')
+        .select('*', { count: 'exact', head: true })
+        .eq('host_id', userId)
+        .eq('status', 'finished'),
     ])
 
     return {
@@ -66,6 +71,7 @@ export const profileService = {
         follower_count: followers.count ?? 0,
         following_count: following.count ?? 0,
         activity_count: activities.count ?? 0,
+        finished_count: finished.count ?? 0,
       },
       error: followers.error ?? following.error ?? activities.error,
     }

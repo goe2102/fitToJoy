@@ -20,6 +20,7 @@ export interface ProfileStats {
   follower_count: number
   following_count: number
   activity_count: number
+  finished_count: number
 }
 
 // ─── Follow ───────────────────────────────────────────────────────────────────
@@ -44,6 +45,8 @@ export interface Block {
 // ─── Activity ─────────────────────────────────────────────────────────────────
 
 export type ActivityStatus = 'active' | 'cancelled' | 'expired' | 'finished'
+export type RecurrenceType = 'weekly' | 'biweekly' | 'monthly'
+export type { ActivityCategory } from '@/constants/categories'
 
 export interface Activity {
   id: string
@@ -61,7 +64,14 @@ export interface Activity {
   price: number | null
   min_age: number | null
   max_age: number | null
+  join_cutoff_minutes: number | null
+  is_outdoor: boolean
+  category: import('@/constants/categories').ActivityCategory
+  tags: string[]
   status: ActivityStatus
+  is_recurring: boolean
+  recurrence: RecurrenceType | null
+  parent_id: string | null
   created_at: string
   updated_at: string
   // joined via query
@@ -77,6 +87,7 @@ export interface Participant {
   activity_id: string
   user_id: string
   status: ParticipantStatus
+  checked_in: boolean
   created_at: string
   profile?: Pick<Profile, 'id' | 'username' | 'avatar_url'>
 }
@@ -141,6 +152,7 @@ export interface ActivityChat {
 export type NotificationType =
   | 'follow_request'
   | 'follow_accepted'
+  | 'new_follower'
   | 'join_request'
   | 'joined_activity'
   | 'join_approved'
@@ -151,6 +163,8 @@ export type NotificationType =
   | 'new_message'
   | 'new_group_message'
   | 'activity_started'
+  | 'waitlist_promoted'
+  | 'next_session_scheduled'
 
 export interface Notification {
   id: string

@@ -24,6 +24,7 @@ import { blockService } from '@/services/blockService'
 import { chatService } from '@/services/chatService'
 import { supabase } from '../../lib/supabase'
 import { radius, spacing, typography } from '@/constants/theme'
+import { getEarnedBadges, getNextBadge } from '@/utils/hostBadges'
 import type { Profile, ProfileStats, FollowStatus, Activity } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -493,6 +494,25 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Host badges */}
+        {(stats?.finished_count ?? 0) > 0 && (() => {
+          const earned = getEarnedBadges(stats!.finished_count)
+          if (!earned.length) return null
+          return (
+            <View style={{ marginHorizontal: spacing.md, marginBottom: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm }}>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>HOST BADGES</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                {earned.map((b) => (
+                  <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: b.color + '18', borderRadius: radius.full, borderWidth: 1, borderColor: b.color + '40', paddingHorizontal: 12, paddingVertical: 5 }}>
+                    <Ionicons name={b.icon as any} size={14} color={b.color} />
+                    <Text style={[typography.caption, { color: b.color, fontWeight: '700' }]}>{b.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )
+        })()}
 
         {/* Follow + Message buttons */}
         {!isMe && (

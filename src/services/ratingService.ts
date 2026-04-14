@@ -1,5 +1,15 @@
 import { supabase } from '../../lib/supabase'
+import { imageService } from './imageService'
 import type { Rating } from '@/types'
+
+export type ActivityPhoto = {
+  id: string
+  activity_id: string
+  user_id: string
+  url: string
+  created_at: string
+  profile?: { username: string; avatar_url: string | null } | null
+}
 
 export const ratingService = {
   /** Submit a rating. One per (activity, rater) — enforced by DB UNIQUE constraint. */
@@ -70,6 +80,40 @@ export const ratingService = {
       rater: Array.isArray(r.rater) ? r.rater[0] : r.rater,
     }))
 
+    return { data: mapped, error }
+  },
+
+  /** Upload and save up to 3 photos for an activity. Returns URLs saved. */
+  async submitPhotos(
+    activityId: string,
+    userId: string,
+    base64Photos: string[]
+  ): Promise<{ urls: string[]; error: Error | null }> {
+    const urls: string[] = []
+    for (let i = 0; i < Math.min(base64Photos.length, 3); i++) {
+      const filePath = `${activityId}/${userId}_${Date.now()}_${i}.jpg`
+      const { url, error } = await imageService.uploadImage('activity-photos', filePath, base64Photos[i])
+      if (error) return { urls, error: error as Error }
+      if (url) urls.push(url)
+    }
+    if (urls.length === 0) return { urls, error: null }
+    const { error } = await supabase.from('activity_photos').insert(
+      urls.map((url) => ({ activity_id: activityId, user_id: userId, url }))
+    )
+    return { urls, error }
+  },
+
+  /** Fetch all photos for an activity with uploader info. */
+  async getPhotosForActivity(activityId: string): Promise<{ data: ActivityPhoto[]; error: Error | null }> {
+    const { data, error } = await supabase
+      .from('activity_photos')
+      .select('*, profile:profiles!activity_photos_user_id_fkey(username, avatar_url)')
+      .eq('activity_id', activityId)
+      .order('created_at', { ascending: false })
+    const mapped = (data ?? []).map((p: any) => ({
+      ...p,
+      profile: Array.isArray(p.profile) ? p.profile[0] : p.profile,
+    }))
     return { data: mapped, error }
   },
 

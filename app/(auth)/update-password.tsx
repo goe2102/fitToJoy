@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { Button, Input } from '@/components/ui'
@@ -10,6 +11,7 @@ import { radius, spacing, typography } from '@/constants/theme'
 
 export default function UpdatePasswordScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { updatePassword } = useAuth()
 
   const [password, setPassword] = useState('')
@@ -19,8 +21,8 @@ export default function UpdatePasswordScreen() {
   const [done, setDone] = useState(false)
 
   const handleUpdate = async () => {
-    if (password.length < 8) { setError('At least 8 characters.'); return }
-    if (password !== confirm) { setError('Passwords do not match.'); return }
+    if (password.length < 8) { setError(t('auth.updatePassword.updateBtn')); return }
+    if (password !== confirm) { setError(t('auth.forgotPassword.passwordMismatch')); return }
     setError('')
     setLoading(true)
     const { error: err } = await updatePassword(password)
@@ -39,10 +41,10 @@ export default function UpdatePasswordScreen() {
             <View style={s.iconCircle}>
               <Ionicons name='checkmark' size={40} color={colors.primary} />
             </View>
-            <Text style={s.title}>Password updated!</Text>
-            <Text style={s.subtitle}>You can now use your new password to sign in.</Text>
+            <Text style={s.title}>{t('auth.updatePassword.successTitle')}</Text>
+            <Text style={s.subtitle}>{t('auth.updatePassword.successSubtitle')}</Text>
             <Button
-              title='Continue'
+              title={t('common.done')}
               onPress={() => router.replace('/(tabs)' as any)}
               style={{ marginTop: spacing.xl, width: '100%' }}
             />
@@ -53,28 +55,28 @@ export default function UpdatePasswordScreen() {
               <View style={s.iconCircle}>
                 <Ionicons name='lock-closed-outline' size={36} color={colors.primary} />
               </View>
-              <Text style={s.title}>Set new password</Text>
-              <Text style={s.subtitle}>Choose a strong password for your account.</Text>
+              <Text style={s.title}>{t('auth.updatePassword.title')}</Text>
+              <Text style={s.subtitle}>{t('auth.forgotPassword.chooseNewPassword')}</Text>
             </View>
             <View style={s.form}>
               <Input
-                label='New password'
-                placeholder='Min. 8 characters'
+                label={t('auth.updatePassword.newPasswordLabel')}
+                placeholder={t('auth.updatePassword.newPasswordPlaceholder')}
                 value={password}
-                onChangeText={(t) => { setPassword(t); setError('') }}
+                onChangeText={(v) => { setPassword(v); setError('') }}
                 secureTextEntry
                 autoFocus
               />
               <Input
-                label='Confirm password'
-                placeholder='••••••••'
+                label={t('auth.updatePassword.confirmPasswordLabel')}
+                placeholder={t('auth.updatePassword.confirmPasswordPlaceholder')}
                 value={confirm}
-                onChangeText={(t) => { setConfirm(t); setError('') }}
+                onChangeText={(v) => { setConfirm(v); setError('') }}
                 secureTextEntry
                 error={error || undefined}
               />
               <Button
-                title='Update Password'
+                title={t('auth.updatePassword.updateBtn')}
                 onPress={handleUpdate}
                 loading={loading}
                 disabled={!password || !confirm}

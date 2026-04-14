@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
@@ -18,7 +17,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { followService } from '@/services/followService'
 import { searchService, type UserResult, type ActivityResult } from '@/services/searchService'
-import { Badge } from '@/components/ui'
+import { useTranslation } from 'react-i18next'
+import { Badge, SearchBar } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 import type { FollowStatus } from '@/types'
 
@@ -247,7 +247,7 @@ function ActivitySearchCard({ activity: a, colors }: { activity: ActivityResult;
 function SectionHeader({ title, colors }: { title: string; colors: AppColors }) {
   return (
     <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-      <Text style={[typography.caption, { color: colors.textMuted, fontWeight: '600', letterSpacing: 0.8 }]}>
+      <Text style={[typography.caption, { color: colors.textMuted, fontWeight: '700', letterSpacing: 0.8 }]}>
         {title.toUpperCase()}
       </Text>
     </View>
@@ -273,6 +273,7 @@ type Tab = 'people' | 'activities'
 
 export default function SearchScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { user } = useAuth()
 
   const [query, setQuery] = useState('')
@@ -281,8 +282,6 @@ export default function SearchScreen() {
   const [activities, setActivities] = useState<ActivityResult[]>([])
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [searchFocused, setSearchFocused] = useState(false)
-  const inputRef = useRef<TextInput>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadDefaults = useCallback(async () => {
@@ -334,50 +333,35 @@ export default function SearchScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       {/* ── Search bar ── */}
       <View style={[styles.searchRow, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
-          <Ionicons name='search' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
-          <TextInput
-            ref={inputRef}
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder='Search people and activities…'
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={onQueryChange}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            autoCapitalize='none'
-            returnKeyType='search'
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => { setQuery(''); loadDefaults() }} hitSlop={8}>
-              <Ionicons name='close-circle' size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <SearchBar
+          value={query}
+          onChangeText={onQueryChange}
+          placeholder={t('search.placeholder')}
+        />
       </View>
 
       {/* ── Tab switcher ── */}
       <View style={[styles.tabRow, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        {(['people', 'activities'] as Tab[]).map((t) => (
+        {(['people', 'activities'] as Tab[]).map((tabVal) => (
           <TouchableOpacity
-            key={t}
+            key={tabVal}
             style={[
               styles.tabPill,
-              tab === t && { backgroundColor: colors.primary + '18' },
+              tab === tabVal && { backgroundColor: colors.primary + '18' },
             ]}
-            onPress={() => setTab(t)}
+            onPress={() => setTab(tabVal)}
             activeOpacity={0.7}
           >
             <Ionicons
-              name={t === 'people' ? 'people-outline' : 'calendar-outline'}
+              name={tabVal === 'people' ? 'people-outline' : 'calendar-outline'}
               size={14}
-              color={tab === t ? colors.primary : colors.textMuted}
+              color={tab === tabVal ? colors.primary : colors.textMuted}
             />
             <Text style={[
               typography.label,
-              { fontSize: 13, color: tab === t ? colors.primary : colors.textMuted },
+              { fontSize: 13, color: tab === tabVal ? colors.primary : colors.textMuted },
             ]}>
-              {t === 'people' ? 'People' : 'Activities'}
+              {tabVal === 'people' ? t('search.people') : t('search.activities')}
             </Text>
           </TouchableOpacity>
         ))}
@@ -399,7 +383,9 @@ export default function SearchScreen() {
             }
             ListHeaderComponent={
               <SectionHeader
-                title={query ? 'Results' : tab === 'people' ? 'Suggested' : 'Recent'}
+                title={query
+                  ? t('common.noResults')
+                  : tab === 'people' ? t('search.people') : t('search.activities')}
                 colors={colors}
               />
             }
@@ -407,10 +393,10 @@ export default function SearchScreen() {
               <EmptyState
                 icon={tab === 'people' ? 'people-outline' : 'calendar-outline'}
                 message={query
-                  ? `No ${tab === 'people' ? 'users' : 'activities'} found for "${query}"`
+                  ? t('search.noResults', { query })
                   : tab === 'people'
-                    ? 'No suggestions yet'
-                    : 'No recent activities'
+                    ? t('search.searchPrompt')
+                    : t('search.searchPromptHint')
                 }
                 colors={colors}
               />
@@ -447,22 +433,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    height: 44,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
-    textAlignVertical: 'center',
-    includeFontPadding: false,
   },
   tabRow: {
     flexDirection: 'row',

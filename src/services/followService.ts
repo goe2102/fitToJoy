@@ -30,7 +30,9 @@ export const followService = {
       )
 
     if (!error && fromProfile) {
-      const type = targetIsPrivate ? 'follow_request' : 'follow_accepted'
+      // Private account → target gets a follow request notification
+      // Public account  → target gets a "X now follows you" notification
+      const type = targetIsPrivate ? 'follow_request' : 'new_follower'
       insertNotification(followingId, type, {
         from_user_id: followerId,
         from_username: fromProfile.username,

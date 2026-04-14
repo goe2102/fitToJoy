@@ -60,7 +60,10 @@ export const groupChatService = {
       msgsByChat[m.chat_id].push(m)  // already sorted desc
     }
 
-    const mapped: ActivityChat[] = chats.map((c: any) => {
+    // Only show chats the user is actually a member of
+    const memberChats = chats.filter((c: any) => memberMap[c.id] !== undefined)
+
+    const mapped: ActivityChat[] = memberChats.map((c: any) => {
       const msgs = msgsByChat[c.id] ?? []
       const lastMsg = msgs[0] ?? null
       const member = memberMap[c.id]

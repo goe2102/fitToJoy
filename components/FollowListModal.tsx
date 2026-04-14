@@ -8,14 +8,15 @@ import {
   StyleSheet,
   ActivityIndicator,
   InteractionManager,
-  TextInput,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { useTranslation } from 'react-i18next'
 import { followService } from '@/services/followService'
 import { useColors } from '@/hooks/useColors'
+import { ModalHeader, SearchBar } from '@/components/ui'
 import { radius, spacing, typography } from '@/constants/theme'
 import type { Profile } from '@/types'
 
@@ -68,6 +69,7 @@ export default function FollowListModal({
   title,
 }: Props) {
   const colors = useColors()
+  const { t } = useTranslation()
   const insets = useSafeAreaInsets()
   const styles = useMemo(() => makeStyles(colors), [colors])
 
@@ -76,7 +78,6 @@ export default function FollowListModal({
   const [myFollowerIds, setMyFollowerIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
 
   useEffect(() => {
     if (!visible) return
@@ -141,7 +142,7 @@ export default function FollowListModal({
           </View>
           {label && (
             <Text style={[typography.caption, { color: label === 'Friends' ? colors.primary : colors.textMuted, marginTop: 1 }]}>
-              {label}
+              {label === 'Friends' ? t('common.friends') : label === 'You' ? t('common.you') : label === 'Follows you' ? t('common.followsYou') : t('common.following')}
             </Text>
           )}
         </View>
@@ -160,36 +161,16 @@ export default function FollowListModal({
       onRequestClose={onClose}
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: spacing.lg }]}>
-          <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>
-            {title ?? (type === 'followers' ? 'Followers' : 'Following')}
-          </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12} style={[styles.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
-            <Ionicons name='close' size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Search */}
-        <View style={[styles.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
-          <Ionicons name='search' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder='Search…'
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            autoCorrect={false}
-            autoCapitalize='none'
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
-              <Ionicons name='close-circle' size={16} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <ModalHeader
+          title={title ?? (type === 'followers' ? t('profile.followers') : t('profile.following'))}
+          onClose={onClose}
+        />
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t('common.search')}
+          style={{ marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.sm }}
+        />
 
         {loading ? (
           <View style={styles.centered}>
@@ -199,7 +180,7 @@ export default function FollowListModal({
           <View style={styles.centered}>
             <Ionicons name='people-outline' size={40} color={colors.textMuted} />
             <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.md }]}>
-              {query ? 'No results' : type === 'followers' ? 'No followers yet' : 'Not following anyone'}
+              {query ? t('common.noResults') : type === 'followers' ? t('profile.noFollowers') : t('profile.notFollowing')}
             </Text>
           </View>
         ) : (
@@ -221,31 +202,6 @@ export default function FollowListModal({
 function makeStyles(colors: ReturnType<typeof useColors>) {
   return StyleSheet.create({
     container: { flex: 1 },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.md,
-    },
-    closeBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    searchBar: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.full,
-      borderWidth: 1,
-    },
-    searchInput: { flex: 1, fontSize: 16, padding: 0, textAlignVertical: 'center', includeFontPadding: false },
     centered: {
       flex: 1,
       alignItems: 'center',

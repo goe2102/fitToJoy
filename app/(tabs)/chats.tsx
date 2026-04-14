@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  TextInput,
   Modal,
   Pressable,
   Platform,
@@ -24,6 +23,8 @@ import { usePendingRequests } from '@/hooks/usePendingRequests'
 import { supabase } from '../../lib/supabase'
 import { chatService } from '@/services/chatService'
 import { groupChatService } from '@/services/groupChatService'
+import { useTranslation } from 'react-i18next'
+import { ScreenHeader, SearchBar } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 import type { ActivityChat, Conversation } from '@/types'
 
@@ -105,24 +106,25 @@ function GroupActionSheet({
   onDelete: () => void
 }) {
   const insets = useSafeAreaInsets()
+  const { t } = useTranslation()
   const isHost = chat.activity?.host_id === currentUserId
 
   const rows: { icon: string; label: string; color: string; onPress: () => void }[] = [
     {
       icon: 'eye-off-outline',
-      label: 'Hide chat',
+      label: t('chats.hideChat'),
       color: colors.text,
       onPress: () => { onClose(); onHide() },
     },
     {
       icon: chat.muted ? 'notifications-outline' : 'notifications-off-outline',
-      label: chat.muted ? 'Unmute notifications' : 'Mute notifications',
+      label: chat.muted ? t('chats.unmuteNotifications') : t('chats.muteNotifications'),
       color: colors.text,
       onPress: () => { onClose(); onMuteToggle(!chat.muted) },
     },
     {
       icon: isHost ? 'trash-outline' : 'exit-outline',
-      label: isHost ? 'Delete group' : 'Leave group',
+      label: isHost ? t('chats.deleteGroup') : t('chats.leaveGroup'),
       color: colors.error,
       onPress: () => { onClose(); isHost ? onDelete() : onLeave() },
     },
@@ -147,7 +149,7 @@ function GroupActionSheet({
                 {chat.activity?.title ?? 'Activity Chat'}
               </Text>
               <Text style={[sheet.identityRole, { color: colors.textMuted }]}>
-                {isHost ? 'You are the host' : 'You are a member'}
+                {isHost ? t('chats.youAreHost') : t('chats.youAreMember')}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={12} style={[sheet.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
@@ -178,7 +180,7 @@ function GroupActionSheet({
 
           {/* Cancel */}
           <TouchableOpacity style={[sheet.cancel, { backgroundColor: colors.primary }]} onPress={onClose} activeOpacity={0.7}>
-            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>Cancel</Text>
+            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>{t('common.cancel')}</Text>
           </TouchableOpacity>
 
         </Pressable>
@@ -260,26 +262,27 @@ function DmActionSheet({
   onClearForMe: () => void
 }) {
   const insets = useSafeAreaInsets()
+  const { t } = useTranslation()
   const other = conversation.other_profile
 
   const rows: { icon: string; label: string; sub?: string; color: string; onPress: () => void }[] = [
     {
       icon: 'eye-off-outline',
-      label: 'Hide chat',
-      sub: 'Reappears when they message you',
+      label: t('chats.hideChat'),
+      sub: t('chats.hideChatHint'),
       color: colors.text,
       onPress: () => { onClose(); onHide() },
     },
     {
       icon: conversation.muted ? 'notifications-outline' : 'notifications-off-outline',
-      label: conversation.muted ? 'Unmute notifications' : 'Mute notifications',
+      label: conversation.muted ? t('chats.unmuteNotifications') : t('chats.muteNotifications'),
       color: colors.text,
       onPress: () => { onClose(); onMuteToggle(!conversation.muted) },
     },
     {
       icon: 'trash-outline',
-      label: 'Delete for me',
-      sub: 'Clears your history. New messages will still arrive.',
+      label: t('chats.deleteForMe'),
+      sub: t('chats.deleteForMeHint'),
       color: colors.error,
       onPress: () => { onClose(); onClearForMe() },
     },
@@ -303,7 +306,7 @@ function DmActionSheet({
               <Text style={[sheet.identityName, { color: colors.text }]} numberOfLines={1}>
                 {other?.username ?? '—'}
               </Text>
-              <Text style={[sheet.identityRole, { color: colors.textMuted }]}>Direct message</Text>
+              <Text style={[sheet.identityRole, { color: colors.textMuted }]}>{t('chat.messagePlaceholder')}</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={12} style={[sheet.closeBtn, { backgroundColor: colors.surfaceElevated }]}>
               <Ionicons name='close' size={16} color={colors.textSecondary} />
@@ -328,7 +331,7 @@ function DmActionSheet({
           ))}
 
           <TouchableOpacity style={[sheet.cancel, { backgroundColor: colors.primary }]} onPress={onClose} activeOpacity={0.7}>
-            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>Cancel</Text>
+            <Text style={[sheet.cancelLabel, { color: '#fff' }]}>{t('common.cancel')}</Text>
           </TouchableOpacity>
 
         </Pressable>
@@ -518,6 +521,7 @@ const c = StyleSheet.create({
 
 export default function ChatsScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { user } = useAuth()
   const { notificationCount, refreshMessages } = useUnread()
   const { count: requestCount } = usePendingRequests()
@@ -527,7 +531,6 @@ export default function ChatsScreen() {
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set())
   const [hiddenDmIds, setHiddenDmIds] = useState<Set<string>>(new Set())
 
@@ -672,12 +675,12 @@ export default function ChatsScreen() {
 
   const onClearDmForMe = (conversationId: string) => {
     Alert.alert(
-      'Delete for me',
-      'Your message history will be cleared. The other person keeps their messages. New messages from them will still arrive.',
+      t('chats.deleteForMe'),
+      t('chats.deleteForMeHint'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete for me', style: 'destructive',
+          text: t('chats.deleteForMe'), style: 'destructive',
           onPress: async () => {
             await chatService.clearForUser(conversationId, user!.id)
             setConversations((prev) => prev.filter((cv) => cv.id !== conversationId))
@@ -703,10 +706,10 @@ export default function ChatsScreen() {
   }
 
   const onLeaveGroup = (chatId: string) => {
-    Alert.alert('Leave Group', 'You will no longer receive messages from this group.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('chats.leaveGroup'), t('chats.leaveGroupConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Leave', style: 'destructive',
+        text: t('chats.leaveGroup'), style: 'destructive',
         onPress: async () => {
           await groupChatService.leaveGroup(chatId, user!.id)
           setGroupChats((prev) => prev.filter((g) => g.id !== chatId))
@@ -716,10 +719,10 @@ export default function ChatsScreen() {
   }
 
   const onDeleteGroup = (chatId: string) => {
-    Alert.alert('Delete Group', 'This will permanently delete the group chat and all messages for everyone.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('chats.deleteGroup'), t('chats.deleteChatConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t('common.delete'), style: 'destructive',
         onPress: async () => {
           await groupChatService.deleteGroup(chatId)
           setGroupChats((prev) => prev.filter((g) => g.id !== chatId))
@@ -735,48 +738,35 @@ export default function ChatsScreen() {
       <View style={{ flex: 1, backgroundColor: colors.background }}>
 
         {/* Header */}
-        <View style={[s.header, { backgroundColor: colors.background }]}>
-          <Text style={[typography.h2, { color: colors.text }]}>Messages</Text>
-          <View style={s.headerRight}>
-            <TouchableOpacity style={s.bellBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.7}>
-              <Ionicons name='notifications-outline' size={22} color={colors.text} />
-              {bellBadge > 0 && (
-                <View style={[s.bellBadge, { backgroundColor: colors.error }]}>
-                  <Text style={s.bellBadgeText}>{bellBadge > 9 ? '9+' : bellBadge}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.composeBtn, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/chat/new' as any)}
-            >
-              <Ionicons name='create-outline' size={18} color='#fff' />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ScreenHeader
+          title={t('chats.title')}
+          right={
+            <View style={s.headerRight}>
+              <TouchableOpacity style={s.bellBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.7}>
+                <Ionicons name='notifications-outline' size={22} color={colors.text} />
+                {bellBadge > 0 && (
+                  <View style={[s.bellBadge, { backgroundColor: colors.error }]}>
+                    <Text style={s.bellBadgeText}>{bellBadge > 9 ? '9+' : bellBadge}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.composeBtn, { backgroundColor: colors.primary }]}
+                onPress={() => router.push('/chat/new' as any)}
+              >
+                <Ionicons name='create-outline' size={18} color='#fff' />
+              </TouchableOpacity>
+            </View>
+          }
+        />
 
         {/* Search */}
         <View style={[s.searchWrap, { backgroundColor: colors.background }]}>
-          <View style={[s.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: searchFocused ? colors.primary : colors.border }]}>
-            <Ionicons name='search-outline' size={16} color={searchFocused ? colors.primary : colors.textMuted} />
-            <TextInput
-              style={[s.searchInput, { color: colors.text }]}
-              placeholder='Search chats…'
-              placeholderTextColor={colors.textMuted}
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              returnKeyType='search'
-              autoCorrect={false}
-              autoCapitalize='none'
-            />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
-                <Ionicons name='close-circle' size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
+          <SearchBar
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t('chats.searchPlaceholder')}
+          />
         </View>
 
         {/* List */}
@@ -787,9 +777,9 @@ export default function ChatsScreen() {
             <View style={[s.emptyIcon, { backgroundColor: colors.surface }]}>
               <Ionicons name={query ? 'search-outline' : 'chatbubbles-outline'} size={32} color={colors.textMuted} />
             </View>
-            <Text style={[s.emptyTitle, { color: colors.text }]}>{query ? 'No results' : 'No chats yet'}</Text>
+            <Text style={[s.emptyTitle, { color: colors.text }]}>{query ? t('common.noResults') : t('chats.noChats')}</Text>
             <Text style={[s.emptyHint, { color: colors.textMuted }]}>
-              {query ? `Nothing matched "${query}"` : 'Start a conversation or join an activity to chat'}
+              {query ? t('search.noResults', { query }) : t('chats.noChatsHint')}
             </Text>
           </View>
         ) : (
@@ -858,18 +848,12 @@ export default function ChatsScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-  },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   bellBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   bellBadge: { position: 'absolute', top: 1, right: 1, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   bellBadgeText: { fontSize: 9, fontWeight: '700', color: '#fff' },
   composeBtn: { width: 34, height: 34, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   searchWrap: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.full, borderWidth: 1, paddingHorizontal: spacing.md, height: 40 },
-  searchInput: { flex: 1, fontSize: 15, padding: 0, textAlignVertical: 'center', includeFontPadding: false },
   listContent: { paddingTop: spacing.sm, paddingBottom: 120 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: spacing.sm },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },

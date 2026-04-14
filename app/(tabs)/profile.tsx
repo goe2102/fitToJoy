@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
-  TextInput,
 } from 'react-native'
 import { imageService } from '@/services/imageService'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -26,8 +25,10 @@ import { profileService } from '@/services/profileService'
 import { activityService } from '@/services/activityService'
 import { ratingService } from '@/services/ratingService'
 import { supabase } from '../../lib/supabase'
-import { Badge } from '@/components/ui'
+import { useTranslation } from 'react-i18next'
+import { Badge, ScreenHeader, ModalHeader, SearchBar } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
+import { getEarnedBadges, getNextBadge } from '@/utils/hostBadges'
 import type { Activity } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -261,10 +262,10 @@ function ActivitiesModal({
   onClose: () => void
   colors: AppColors
 }) {
+  const { t } = useTranslation()
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
-  const [focused, setFocused] = useState(false)
 
   useEffect(() => {
     if (!visible) return
@@ -289,36 +290,13 @@ function ActivitiesModal({
   return (
     <Modal visible={visible} animationType='slide' presentationStyle='pageSheet' onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-          <Text style={[typography.h3, { color: colors.text, flex: 1 }]}>My Activities</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name='close' size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Search bar */}
-        <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceElevated, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: focused ? colors.primary : colors.border }}>
-            <Ionicons name='search' size={16} color={focused ? colors.primary : colors.textMuted} />
-            <TextInput
-              style={{ flex: 1, color: colors.text, fontSize: 15, padding: 0 }}
-              placeholder='Search activities…'
-              placeholderTextColor={colors.textMuted}
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              autoCorrect={false}
-              autoCapitalize='none'
-            />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
-                <Ionicons name='close-circle' size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        <ModalHeader title={t('profile.myActivities')} onClose={onClose} />
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t('profile.searchActivities')}
+          style={{ marginHorizontal: spacing.md, marginVertical: spacing.sm }}
+        />
 
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
@@ -326,7 +304,7 @@ function ActivitiesModal({
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingBottom: 60 }}>
             <Ionicons name='calendar-outline' size={36} color={colors.textMuted} />
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              {query ? 'No results' : 'No hosted activities'}
+              {query ? t('common.noResults') : t('profile.noActivities')}
             </Text>
           </View>
         ) : (
@@ -356,7 +334,7 @@ function ActivitiesModal({
                 </View>
                 <View style={{ backgroundColor: item.status === 'finished' ? colors.success + '18' : colors.primary + '18', borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
                   <Text style={[typography.caption, { color: item.status === 'finished' ? colors.success : colors.primary, fontWeight: '700' }]}>
-                    {item.status === 'finished' ? 'Finished' : 'Active'}
+                    {item.status === 'finished' ? t('chats.finished') : t('activity.joined')}
                   </Text>
                 </View>
                 <Ionicons name='chevron-forward' size={16} color={colors.textMuted} />
@@ -405,6 +383,7 @@ type ActivityTab = 'hosting' | 'joined' | 'past'
 
 export default function ProfileScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { user } = useAuth()
   const { profile, stats, loading, refreshProfile, updateAvatar } = useProfile()
@@ -416,7 +395,7 @@ export default function ProfileScreen() {
     setAvatarSaving(true)
     const { error } = await updateAvatar(result.base64)
     setAvatarSaving(false)
-    if (error) Alert.alert('Error', 'Could not update photo. Please try again.')
+    if (error) Alert.alert(t('common.error'), 'Could not update photo. Please try again.')
   }
 
   const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
@@ -475,10 +454,10 @@ export default function ProfileScreen() {
     const msg = count > 0
       ? `This will cancel the activity and notify ${count} participant${count === 1 ? '' : 's'}.`
       : 'This will permanently delete the activity.'
-    Alert.alert('Delete Activity', msg, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('activity.deleteConfirmTitle'), msg, [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           await activityService.cancelActivity(activity.id)
@@ -501,9 +480,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.safe]} edges={['top']}>
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
-          <Text style={styles.screenTitle}>Profile</Text>
-        </View>
+        <ScreenHeader title={t('profile.title')} />
         <View style={[styles.centered, { flex: 1, backgroundColor: colors.background }]}>
           <ActivityIndicator color={colors.primary} size='large' />
         </View>
@@ -514,12 +491,14 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.safe]} edges={['top']}>
       {/* ── Header ── */}
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <Text style={styles.screenTitle}>Profile</Text>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings' as any)}>
-          <Ionicons name='settings-outline' size={22} color={colors.text} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title={t('profile.title')}
+        right={
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings' as any)}>
+            <Ionicons name='settings-outline' size={22} color={colors.text} />
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -584,12 +563,43 @@ export default function ProfileScreen() {
 
         {/* ── Stats ── */}
         <View style={[styles.statsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <StatPill label='Followers' value={stats.follower_count} colors={colors} onPress={() => setFollowModal('followers')} />
+          <StatPill label={t('profile.followers')} value={stats.follower_count} colors={colors} onPress={() => setFollowModal('followers')} />
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <StatPill label='Following' value={stats.following_count} colors={colors} onPress={() => setFollowModal('following')} />
+          <StatPill label={t('profile.following')} value={stats.following_count} colors={colors} onPress={() => setFollowModal('following')} />
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <StatPill label='Activities' value={stats.activity_count} colors={colors} onPress={() => setActivitiesModal(true)} />
+          <StatPill label={t('profile.activities')} value={stats.activity_count} colors={colors} onPress={() => setActivitiesModal(true)} />
         </View>
+
+        {/* ── Host badges ── */}
+        {stats.finished_count > 0 && (() => {
+          const earned = getEarnedBadges(stats.finished_count)
+          const next = getNextBadge(stats.finished_count)
+          return (
+            <View style={{ marginBottom: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>HOST BADGES</Text>
+                {next && (
+                  <Text style={[typography.caption, { color: colors.primary, fontWeight: '600' }]}>
+                    {next.remaining} more for {next.label}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                {earned.map((b) => (
+                  <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: b.color + '18', borderRadius: radius.full, borderWidth: 1, borderColor: b.color + '40', paddingHorizontal: 12, paddingVertical: 5 }}>
+                    <Ionicons name={b.icon as any} size={14} color={b.color} />
+                    <Text style={[typography.caption, { color: b.color, fontWeight: '700' }]}>{b.label}</Text>
+                  </View>
+                ))}
+              </View>
+              {next && (
+                <View style={{ height: 4, backgroundColor: colors.surfaceElevated, borderRadius: 2, overflow: 'hidden' }}>
+                  <View style={{ width: `${Math.round(((next.threshold - next.remaining) / next.threshold) * 100)}%`, height: '100%', backgroundColor: colors.primary, borderRadius: 2 }} />
+                </View>
+              )}
+            </View>
+          )
+        })()}
 
         {/* ── Activities ── */}
         <View style={styles.section}>
@@ -597,7 +607,7 @@ export default function ProfileScreen() {
           <View style={[styles.tabBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {(['hosting', 'joined', 'past'] as const).map((tab) => {
               const count = tab === 'hosting' ? hostingActivities.length : tab === 'joined' ? joinedActivities.length : participatedPastEntries.length
-              const label = tab === 'hosting' ? 'Hosting' : tab === 'joined' ? 'Joined' : 'Past'
+              const label = tab === 'hosting' ? t('activity.host') : tab === 'joined' ? t('activity.joined') : t('pastActivity.title')
               return (
                 <TouchableOpacity
                   key={tab}
@@ -627,9 +637,9 @@ export default function ProfileScreen() {
                 ? (
                   <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <Ionicons name='trophy-outline' size={32} color={colors.textMuted} />
-                    <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>No finished activities yet</Text>
+                    <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>{t('profile.noActivities')}</Text>
                     <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
-                      Activities you participated in will appear here once finished
+                      {t('profile.noActivitiesHint')}
                     </Text>
                   </View>
                 )
@@ -645,12 +655,10 @@ export default function ProfileScreen() {
                   <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <Ionicons name='calendar-outline' size={32} color={colors.textMuted} />
                     <Text style={[typography.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>
-                      {activeTab === 'hosting' ? 'No active activities' : 'Not joined any activities'}
+                      {t('profile.noActivities')}
                     </Text>
                     <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginTop: 4 }]}>
-                      {activeTab === 'hosting'
-                        ? 'Tap + New to create one'
-                        : 'Find activities on the map and join them'}
+                      {t('profile.noActivitiesHint')}
                     </Text>
                   </View>
                 )
@@ -698,16 +706,7 @@ function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     centered: { alignItems: 'center', justifyContent: 'center' },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.md,
-    },
     scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
-    screenTitle: { ...typography.h2, color: colors.text },
-    topBarActions: { flexDirection: 'row', gap: spacing.sm },
     iconBtn: {
       width: 38,
       height: 38,

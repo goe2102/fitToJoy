@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Modal,
   Platform,
   InteractionManager,
+  Animated,
+  Dimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -21,8 +23,11 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { activityService } from '@/services/activityService'
+import { fetchWeather, type WeatherData } from '@/services/weatherService'
 import { groupChatService } from '@/services/groupChatService'
 import { chatService } from '@/services/chatService'
+import { scheduleStartNotification, cancelStartNotification } from '@/utils/scheduleStartNotification'
+import { getCategoryMeta } from '@/constants/categories'
 import { Input, Button } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 import type { Activity, Participant, ParticipantStatus } from '@/types'
@@ -394,28 +399,56 @@ export default function ActivityManageScreen() {
   const [joined, setJoined] = useState<Participant[]>([])
   const [waitlisted, setWaitlisted] = useState<Participant[]>([])
   const [myStatus, setMyStatus] = useState<ParticipantStatus | null>(null)
+  const [myCheckedIn, setMyCheckedIn] = useState(false)
+  const [checkingIn, setCheckingIn] = useState(false)
+  const [showCheckInAnim, setShowCheckInAnim] = useState(false)
+  const ciCircleScale   = useRef(new Animated.Value(0)).current
+  const ciCheckOpacity  = useRef(new Animated.Value(0)).current
+  const ciRing1Scale    = useRef(new Animated.Value(1)).current
+  const ciRing1Opacity  = useRef(new Animated.Value(0)).current
+  const ciRing2Scale    = useRef(new Animated.Value(1)).current
+  const ciRing2Opacity  = useRef(new Animated.Value(0)).current
+  const ciRing3Scale    = useRef(new Animated.Value(1)).current
+  const ciRing3Opacity  = useRef(new Animated.Value(0)).current
+  const ciTextOpacity   = useRef(new Animated.Value(0)).current
+  const ciTextTranslate = useRef(new Animated.Value(16)).current
+  const ciOverlayOpacity = useRef(new Animated.Value(0)).current
   const [loading, setLoading] = useState(true)
   const [editVisible, setEditVisible] = useState(false)
+  const [weather, setWeather] = useState<WeatherData | null>(null)
 
   const loadData = useCallback(async () => {
     if (!id || !user) return
     setLoading(true)
-    const [{ data: act }, { data: pend }, { data: join }, { data: wait }, status] = await Promise.all([
+    const [{ data: act }, { data: pend }, { data: join }, { data: wait }, status, checkedIn] = await Promise.all([
       activityService.getActivityById(id),
       activityService.getPendingParticipants(id),
       activityService.getParticipants(id),
       activityService.getWaitlist(id),
       activityService.getMyParticipantStatus(id, user.id),
+      activityService.getMyCheckedIn(id, user.id),
     ])
     setActivity(act)
     setPending(pend)
     setJoined(join)
     setWaitlisted(wait)
     setMyStatus(status)
+    setMyCheckedIn(checkedIn)
     setLoading(false)
+    // Schedule local start notification if participant (joined/approved)
+    if (act && (status === 'joined' || status === 'approved') && act.host_id !== user?.id) {
+      scheduleStartNotification(act.id, act.title, act.date, act.start_time)
+    }
   }, [id, user?.id])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Fetch weather once activity loads
+  useEffect(() => {
+    if (!activity?.is_outdoor) return
+    fetchWeather(activity.latitude, activity.longitude, activity.date, activity.start_time)
+      .then(setWeather)
+  }, [activity?.id, activity?.is_outdoor])
 
   const onAccept = async (participant: Participant) => {
     await activityService.approveParticipant(participant.activity_id, participant.user_id, activity?.title)
@@ -470,6 +503,7 @@ export default function ActivityManageScreen() {
         onPress: async () => {
           if (!activity || !user) return
           await activityService.leave(activity.id, user.id)
+          cancelStartNotification(activity.id)
           router.back()
         },
       },
@@ -507,12 +541,57 @@ export default function ActivityManageScreen() {
     )
   }
 
+  const handleCheckIn = async () => {
+    if (!activity || !user || checkingIn) return
+    setCheckingIn(true)
+    const { error } = await activityService.checkIn(activity.id, user.id)
+    setCheckingIn(false)
+    if (error) { Alert.alert('Error', error.message); return }
+    setMyCheckedIn(true)
+    // Reset & run check-in celebration animation
+    ciCircleScale.setValue(0); ciCheckOpacity.setValue(0)
+    ciRing1Scale.setValue(1); ciRing1Opacity.setValue(0)
+    ciRing2Scale.setValue(1); ciRing2Opacity.setValue(0)
+    ciRing3Scale.setValue(1); ciRing3Opacity.setValue(0)
+    ciTextOpacity.setValue(0); ciTextTranslate.setValue(16)
+    ciOverlayOpacity.setValue(0)
+    setShowCheckInAnim(true)
+    const ring = (scale: Animated.Value, opacity: Animated.Value, delay: number) =>
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 0.6, duration: 1, useNativeDriver: true }),
+          Animated.parallel([
+            Animated.timing(scale, { toValue: 2.8, duration: 900, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 0, duration: 900, useNativeDriver: true }),
+          ]),
+        ]),
+      ])
+    Animated.parallel([
+      Animated.timing(ciOverlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(ciCircleScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
+      Animated.sequence([Animated.delay(200), Animated.timing(ciCheckOpacity, { toValue: 1, duration: 200, useNativeDriver: true })]),
+      ring(ciRing1Scale, ciRing1Opacity, 150),
+      ring(ciRing2Scale, ciRing2Opacity, 350),
+      ring(ciRing3Scale, ciRing3Opacity, 550),
+      Animated.sequence([Animated.delay(400), Animated.parallel([
+        Animated.timing(ciTextOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(ciTextTranslate, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ])]),
+    ]).start()
+    // Auto-dismiss after 2s
+    setTimeout(() => {
+      Animated.timing(ciOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setShowCheckInAnim(false))
+    }, 2000)
+  }
+
   const isDark = colors.text === '#F2F2F8'
   const isHost = activity?.host_id === user?.id
   const isParticipant = joined.some((p) => p.user_id === user?.id)
   const isWaitlisted = myStatus === 'waitlisted'
   const hasStarted = activity ? activityService.msUntilStart(activity.date, activity.start_time) <= 0 : false
   const canEdit = isHost && !hasStarted && activity?.status === 'active'
+  const showCheckIn = isParticipant && hasStarted && activity?.status === 'active'
 
   if (loading) {
     return (
@@ -544,7 +623,7 @@ export default function ActivityManageScreen() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={['bottom']}>
       {/* ── Body ── */}
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
+        contentContainerStyle={{ paddingBottom: (showCheckIn && !myCheckedIn) ? insets.bottom + 100 : insets.bottom + spacing.xl }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero ── */}
@@ -616,8 +695,26 @@ export default function ActivityManageScreen() {
         {/* ── Title block (always below image / header) ── */}
         <View style={styles.titleBlock}>
           {/* Badges */}
-          {(!activity.is_public || (!!activity.price && activity.price > 0) || activity.min_age || activity.max_age) && (
+          {(true) && (
             <View style={styles.badgeRow}>
+              {/* Category badge — always shown */}
+              {(() => {
+                const cat = getCategoryMeta(activity.category)
+                return (
+                  <View style={[styles.badgePill, { backgroundColor: cat.color + '18' }]}>
+                    <Ionicons name={cat.icon as any} size={12} color={cat.color} />
+                    <Text style={[typography.caption, { color: cat.color, fontWeight: '700' }]}>{cat.label}</Text>
+                  </View>
+                )
+              })()}
+              {activity.is_recurring && (
+                <View style={[styles.badgePill, { backgroundColor: colors.primary + '15' }]}>
+                  <Ionicons name='refresh-circle-outline' size={12} color={colors.primary} />
+                  <Text style={[typography.caption, { color: colors.primary, fontWeight: '700' }]}>
+                    {activity.recurrence === 'weekly' ? 'Weekly' : activity.recurrence === 'biweekly' ? 'Biweekly' : 'Monthly'}
+                  </Text>
+                </View>
+              )}
               {!activity.is_public && (
                 <View style={[styles.badgePill, { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }]}>
                   <Ionicons name='lock-closed' size={12} color={colors.textMuted} />
@@ -648,6 +745,25 @@ export default function ActivityManageScreen() {
               {activity.description}
             </Text>
           ) : null}
+          {activity.tags?.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {activity.tags.map((tag) => (
+                <View
+                  key={tag}
+                  style={{
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: radius.full,
+                    backgroundColor: colors.surfaceElevated,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Text style={[typography.caption, { color: colors.textSecondary, fontWeight: '600' }]}>#{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.scroll}>
@@ -691,6 +807,87 @@ export default function ActivityManageScreen() {
             </Text>
           </View>
         </View>
+
+        {/* ── Weather card ── */}
+        {activity.is_outdoor && (
+          <View style={[styles.weatherCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {weather ? (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+                  <Ionicons name={weather.icon as any} size={30} color={colors.primary} />
+                  <View>
+                    <Text style={[typography.label, { color: colors.text }]}>
+                      {weather.temp}°C · {weather.label}
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.textMuted, marginTop: 1 }]}>
+                      {weather.precipProb}% chance of rain · {weather.windKph} km/h wind
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.weatherBadge, { backgroundColor: colors.primary + '15' }]}>
+                  <Text style={[typography.caption, { color: colors.primary, fontWeight: '700' }]}>Forecast</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <Ionicons name='partly-sunny-outline' size={20} color={colors.textMuted} />
+                <Text style={[typography.caption, { color: colors.textMuted }]}>Loading forecast…</Text>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ── Checked-in banner (shown after check-in) ── */}
+        {showCheckIn && myCheckedIn && (
+          <View style={{
+            marginBottom: spacing.sm,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            backgroundColor: colors.success + '15',
+            borderWidth: 1,
+            borderColor: colors.success + '40',
+            borderRadius: radius.lg,
+            paddingVertical: spacing.sm,
+          }}>
+            <Ionicons name='checkmark-circle' size={16} color={colors.success} />
+            <Text style={[typography.label, { color: colors.success }]}>Already checked in</Text>
+          </View>
+        )}
+
+        {/* ── Host card (visible to participants, not to host themselves) ── */}
+        {isParticipant && !isHost && activity.host && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md }}
+            onPress={() => activity.host?.id && router.push(`/profile/${activity.host.id}` as any)}
+            activeOpacity={0.75}
+          >
+            {activity.host.avatar_url ? (
+              <Image source={{ uri: activity.host.avatar_url }} style={{ width: 42, height: 42, borderRadius: 21 }} contentFit='cover' />
+            ) : (
+              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name='person' size={20} color={colors.textMuted} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={[typography.label, { color: colors.text }]}>@{activity.host.username}</Text>
+                {activity.host.is_verified && <Ionicons name='checkmark-circle' size={14} color={colors.primary} />}
+              </View>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>Host</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => activity.host?.id && handleDM(activity.host.id)}
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary + '15', borderWidth: 1, borderColor: colors.primary + '40', alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.7}
+              hitSlop={8}
+            >
+              <Ionicons name='chatbubble-outline' size={16} color={colors.primary} />
+            </TouchableOpacity>
+            <Ionicons name='chevron-forward' size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
 
         {/* ── Group Chat button ── */}
         {(isHost || isParticipant) && (
@@ -799,6 +996,7 @@ export default function ActivityManageScreen() {
                       const { error } = await activityService.markAsFinished(activity.id)
                       if (error) { Alert.alert('Error', error.message); return }
                       setActivity((a) => a ? { ...a, status: 'finished' } : a)
+                      router.push({ pathname: '/activity-finished', params: { title: activity.title } } as any)
                     },
                   },
                 ]
@@ -817,6 +1015,35 @@ export default function ActivityManageScreen() {
             <Ionicons name='checkmark-circle' size={16} color={colors.success} />
             <Text style={[typography.label, { color: colors.success }]}>Activity Finished</Text>
           </View>
+        )}
+
+        {/* ── Schedule Next Session (host only, recurring, finished) ── */}
+        {isHost && activity.status === 'finished' && activity.is_recurring && (
+          <TouchableOpacity
+            style={[styles.deleteBtn, { borderColor: colors.primary + '50', marginBottom: spacing.sm }]}
+            onPress={() => {
+              const label = activity.recurrence === 'weekly' ? 'next week' : activity.recurrence === 'biweekly' ? 'in 2 weeks' : 'next month'
+              Alert.alert(
+                'Schedule Next Session',
+                `Create the next session of "${activity.title}" for ${label}? Previous participants will be notified.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Schedule',
+                    onPress: async () => {
+                      const { data: next, error } = await activityService.scheduleNextSession(activity)
+                      if (error || !next) { Alert.alert('Error', error?.message ?? 'Failed to schedule'); return }
+                      router.replace(`/activity/${next.id}` as any)
+                    },
+                  },
+                ]
+              )
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name='refresh-circle-outline' size={16} color={colors.primary} />
+            <Text style={[typography.label, { color: colors.primary }]}>Schedule Next Session</Text>
+          </TouchableOpacity>
         )}
 
         {/* ── Delete activity (host only, before start) ── */}
@@ -852,6 +1079,98 @@ export default function ActivityManageScreen() {
 
         </View>{/* end scroll inner padding */}
       </ScrollView>
+
+      {/* ── Check-in sticky bottom button ── */}
+      {showCheckIn && !myCheckedIn && (
+        <View style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          paddingHorizontal: spacing.md,
+          paddingBottom: spacing.lg,
+          paddingTop: spacing.sm,
+          backgroundColor: colors.background,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+        }}>
+          <TouchableOpacity
+            onPress={handleCheckIn}
+            activeOpacity={0.85}
+            disabled={checkingIn}
+            style={{
+              backgroundColor: colors.primary,
+              borderRadius: radius.full,
+              paddingVertical: spacing.md,
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              gap: spacing.sm,
+            }}
+          >
+            {checkingIn ? (
+              <ActivityIndicator size='small' color='#fff' />
+            ) : (
+              <>
+                <Ionicons name='location-outline' size={18} color='#fff' />
+                <Text style={[typography.label, { color: '#fff' }]}>Check In</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Check-in celebration overlay ── */}
+      {showCheckInAnim && (
+        <Animated.View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: colors.background,
+          alignItems: 'center', justifyContent: 'center',
+          opacity: ciOverlayOpacity,
+        }}>
+          {/* Ripple rings */}
+          {([ciRing1Scale, ciRing2Scale, ciRing3Scale] as const).map((scale, i) => {
+            const opacity = [ciRing1Opacity, ciRing2Opacity, ciRing3Opacity][i]
+            return (
+              <Animated.View key={i} pointerEvents='none' style={{
+                position: 'absolute',
+                width: 100, height: 100, borderRadius: 50,
+                borderWidth: 2, borderColor: colors.success,
+                transform: [{ scale }], opacity,
+              }} />
+            )
+          })}
+          {/* Circle + checkmark */}
+          <Animated.View style={{
+            width: 100, height: 100, borderRadius: 50,
+            backgroundColor: colors.success,
+            alignItems: 'center', justifyContent: 'center',
+            transform: [{ scale: ciCircleScale }],
+            shadowColor: colors.success,
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.35, shadowRadius: 20, elevation: 12,
+          }}>
+            <Animated.View style={{ opacity: ciCheckOpacity }}>
+              <Ionicons name='checkmark' size={52} color='#fff' />
+            </Animated.View>
+          </Animated.View>
+          {/* Text */}
+          <Animated.View style={{
+            marginTop: spacing.xl + spacing.md,
+            alignItems: 'center',
+            paddingHorizontal: spacing.xl,
+            opacity: ciTextOpacity,
+            transform: [{ translateY: ciTextTranslate }],
+          }}>
+            <Text style={[typography.h2, { color: colors.text, textAlign: 'center', marginBottom: spacing.sm }]}>
+              Checked In!
+            </Text>
+            <Text style={[typography.bodySmall, { color: colors.textMuted, textAlign: 'center', lineHeight: 20 }]}>
+              Your attendance is confirmed. You can now rate the host after the activity.
+            </Text>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* ── Edit modal ── */}
       {activity && (
@@ -1001,6 +1320,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 7,
     borderRadius: radius.full,
+  },
+  weatherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  weatherBadge: {
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   waitlistBanner: {
     flexDirection: 'row',

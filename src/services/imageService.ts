@@ -9,7 +9,7 @@ export const imageService = {
    */
   async pickImage(aspect: [number, number] = [1, 1]) {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect,
       quality: 0.7, // Compress image to save storage

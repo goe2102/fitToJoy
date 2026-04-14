@@ -17,6 +17,7 @@ import MapView, {
   type Region,
 } from 'react-native-maps'
 import Supercluster from 'supercluster'
+import { fetchWeather, type WeatherData } from '@/services/weatherService'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -28,6 +29,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { activityService } from '@/services/activityService'
 import { chatService } from '@/services/chatService'
+import { scheduleStartNotification, cancelStartNotification } from '@/utils/scheduleStartNotification'
+import { CATEGORIES, getCategoryMeta, type ActivityCategory } from '@/constants/categories'
 import { supabase } from '../../lib/supabase'
 import { Button } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
@@ -56,34 +59,39 @@ function formatDuration(m: number) {
 
 // ─── Activity Marker ──────────────────────────────────────────────────────────
 
+type FriendParticipant = { user_id: string; username: string; avatar_url: string | null }
+
 function ActivityMarker({
   activity,
+  friends,
   colors,
   onPress,
 }: {
   activity: Activity
+  friends: FriendParticipant[]
   colors: AppColors
   onPress: () => void
 }) {
-  const accent = activity.is_public ? colors.primary : '#9CA3AF'
-  const [imgLoaded, setImgLoaded] = useState(false)
+  const cat = getCategoryMeta(activity.category)
+  const accent = activity.is_public ? cat.color : '#9CA3AF'
   const hasCover = !!activity.cover_image_url
+  const displayFriends = friends.slice(0, 3)
+  const extraFriends = friends.length - displayFriends.length
+
+  // Track view changes until all images are loaded
+  const totalImages = (hasCover ? 1 : 0) + displayFriends.filter(f => !!f.avatar_url).length
+  const [loadedCount, setLoadedCount] = useState(0)
+  const onImageLoad = () => setLoadedCount(n => n + 1)
+  const tracksViewChanges = loadedCount < totalImages
 
   return (
     <Marker
-      coordinate={{
-        latitude: activity.latitude,
-        longitude: activity.longitude,
-      }}
+      coordinate={{ latitude: activity.latitude, longitude: activity.longitude }}
       onPress={onPress}
-      tracksViewChanges={hasCover && !imgLoaded}
+      tracksViewChanges={tracksViewChanges}
       anchor={{ x: 0.5, y: 1 }}
     >
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.85}
-        style={mStyles.wrapper}
-      >
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={mStyles.wrapper}>
         {/* Pin circle */}
         <View style={[mStyles.pin, { backgroundColor: accent }]}>
           {hasCover ? (
@@ -91,20 +99,50 @@ function ActivityMarker({
               source={{ uri: activity.cover_image_url! }}
               style={mStyles.pinImage}
               contentFit='cover'
-              onLoad={() => setImgLoaded(true)}
+              onLoad={onImageLoad}
             />
           ) : (
-            <Ionicons name='flame-outline' size={22} color='#fff' />
+            <Ionicons name={cat.icon as any} size={22} color='#fff' />
           )}
-          {/* Private lock badge */}
           {!activity.is_public && (
             <View style={mStyles.lockBadge}>
               <Ionicons name='lock-closed' size={8} color='#fff' />
             </View>
           )}
         </View>
+
         {/* Teardrop tail */}
         <View style={[mStyles.tail, { borderTopColor: accent }]} />
+
+        {/* Friend avatars — shown below the tail */}
+        {friends.length > 0 && (
+          <View style={mStyles.friendRow}>
+            {displayFriends.map((f, i) => (
+              <View
+                key={f.user_id}
+                style={[mStyles.friendAvatar, { marginLeft: i === 0 ? 0 : -6, borderColor: '#fff' }]}
+              >
+                {f.avatar_url ? (
+                  <Image
+                    source={{ uri: f.avatar_url }}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit='cover'
+                    onLoad={onImageLoad}
+                  />
+                ) : (
+                  <View style={[mStyles.friendAvatarFallback, { backgroundColor: accent }]}>
+                    <Text style={mStyles.friendInitial}>{f.username[0].toUpperCase()}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+            {extraFriends > 0 && (
+              <View style={[mStyles.friendExtra, { backgroundColor: accent, marginLeft: -6 }]}>
+                <Text style={mStyles.friendExtraText}>+{extraFriends}</Text>
+              </View>
+            )}
+          </View>
+        )}
       </TouchableOpacity>
     </Marker>
   )
@@ -253,8 +291,10 @@ function ActivityDetailSheet({
   const [participants, setParticipants] = useState<Participant[]>([])
   const [liveCount, setLiveCount] = useState<number>(0)
   const [myStatus, setMyStatus] = useState<string | null>(null)
+  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [joining, setJoining] = useState(false)
+  const [weather, setWeather] = useState<WeatherData | null>(null)
 
   const isHost = !!activity && activity.host?.id === currentUserId
 
@@ -267,12 +307,25 @@ function ActivityDetailSheet({
     setParticipants(p)
     setMyStatus(status)
     setLiveCount(p.length)
+    if (status === 'waitlisted') {
+      const pos = await activityService.getWaitlistPosition(activity.id, currentUserId)
+      setWaitlistPosition(pos)
+    } else {
+      setWaitlistPosition(null)
+    }
   }, [activity?.id, currentUserId])
 
   useEffect(() => {
     if (!activity || !visible) return
     setLoading(true)
+    setWeather(null)
     loadData().finally(() => setLoading(false))
+
+    // Fetch weather for outdoor activities
+    if (activity.is_outdoor) {
+      fetchWeather(activity.latitude, activity.longitude, activity.date, activity.start_time)
+        .then(setWeather)
+    }
 
     // Realtime — re-fetch on any participants change for this activity
     const channel = supabase
@@ -359,9 +412,14 @@ function ActivityDetailSheet({
         "This activity is full. You've been added to the waitlist and will be notified automatically when a spot opens up."
       )
     } else {
-      setMyStatus(activity.is_public ? 'joined' : 'pending')
-      if (!activity.is_public)
+      const newStatus = activity.is_public ? 'joined' : 'pending'
+      setMyStatus(newStatus)
+      if (!activity.is_public) {
         Alert.alert('Request sent', 'The host will review your request.')
+      } else {
+        // Schedule a local notification at the actual start time
+        scheduleStartNotification(activity.id, activity.title, activity.date, activity.start_time)
+      }
     }
   }
 
@@ -379,10 +437,10 @@ function ActivityDetailSheet({
           onPress: async () => {
             await activityService.leave(activity.id, currentUserId)
             setMyStatus(null)
-            if (!isWaitlisted)
-              setParticipants((p) =>
-                p.filter((x) => x.user_id !== currentUserId)
-              )
+            if (!isWaitlisted) {
+              setParticipants((p) => p.filter((x) => x.user_id !== currentUserId))
+              cancelStartNotification(activity.id)
+            }
           },
         },
       ]
@@ -505,11 +563,18 @@ function ActivityDetailSheet({
           {/* ── Title block (below image) ── */}
           <View style={styles.sheetTitleBlock}>
             {/* Badges */}
-            {(!activity.is_public ||
-              (!!activity.price && activity.price > 0) ||
-              activity.min_age ||
-              activity.max_age) && (
+            {(true) && (
               <View style={styles.badgeRow}>
+                {/* Category */}
+                {(() => {
+                  const cat = getCategoryMeta(activity.category)
+                  return (
+                    <View style={[styles.badgePill, { backgroundColor: cat.color + '18' }]}>
+                      <Ionicons name={cat.icon as any} size={12} color={cat.color} />
+                      <Text style={[typography.caption, { color: cat.color, fontWeight: '700' }]}>{cat.label}</Text>
+                    </View>
+                  )
+                })()}
                 {!activity.is_public && (
                   <View
                     style={[
@@ -597,6 +662,26 @@ function ActivityDetailSheet({
             >
               {activity.title}
             </Text>
+
+            {activity.tags?.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 2 }}>
+                {activity.tags.map((tag) => (
+                  <View
+                    key={tag}
+                    style={{
+                      paddingVertical: 3,
+                      paddingHorizontal: 9,
+                      borderRadius: 99,
+                      backgroundColor: colors.surfaceElevated,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Text style={[typography.caption, { color: colors.textSecondary, fontWeight: '600' }]}>#{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Host row */}
             <TouchableOpacity
@@ -722,6 +807,70 @@ function ActivityDetailSheet({
               </View>
             </View>
 
+            {/* Weather card — outdoor activities only */}
+            {activity.is_outdoor && weather && (
+              <View style={[styles.weatherCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+                  <Ionicons name={weather.icon as any} size={28} color={colors.primary} />
+                  <View>
+                    <Text style={[typography.label, { color: colors.text }]}>
+                      {weather.temp}°C · {weather.label}
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.textMuted, marginTop: 1 }]}>
+                      {weather.precipProb}% rain · {weather.windKph} km/h wind
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.weatherBadge, { backgroundColor: colors.primary + '15' }]}>
+                  <Text style={[typography.caption, { color: colors.primary, fontWeight: '700' }]}>Forecast</Text>
+                </View>
+              </View>
+            )}
+            {activity.is_outdoor && !weather && (
+              <View style={[styles.weatherCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name='partly-sunny-outline' size={18} color={colors.textMuted} />
+                <Text style={[typography.caption, { color: colors.textMuted }]}>Loading forecast…</Text>
+              </View>
+            )}
+
+            {/* Waitlist banner */}
+            {myStatus === 'waitlisted' && (
+              <View style={[styles.cutoffBanner, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40' }]}>
+                <Ionicons name='time-outline' size={14} color={colors.warning} />
+                <Text style={[typography.caption, { color: colors.warning, flex: 1, fontWeight: '600' }]}>
+                  You're on the waitlist{waitlistPosition != null ? ` · Position #${waitlistPosition}` : ''}
+                </Text>
+              </View>
+            )}
+
+            {/* Join cutoff notice */}
+            {activity.join_cutoff_minutes != null && (() => {
+              const msUntil = activityService.msUntilStart(activity.date, activity.start_time)
+              const cutoffMs = activity.join_cutoff_minutes * 60 * 1000
+              const inWindow = msUntil > cutoffMs
+              const mins = activity.join_cutoff_minutes
+              const label = mins >= 60
+                ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`
+                : `${mins}m`
+              return (
+                <View style={[styles.cutoffBanner, {
+                  backgroundColor: inWindow ? colors.primary + '12' : colors.error + '12',
+                  borderColor: inWindow ? colors.primary + '30' : colors.error + '30',
+                }]}>
+                  <Ionicons
+                    name={inWindow ? 'time-outline' : 'lock-closed-outline'}
+                    size={14}
+                    color={inWindow ? colors.primary : colors.error}
+                  />
+                  <Text style={[typography.caption, { color: inWindow ? colors.primary : colors.error, flex: 1 }]}>
+                    {inWindow
+                      ? `Joining closes ${label} before start`
+                      : 'Joining is closed for this activity'}
+                  </Text>
+                </View>
+              )
+            })()}
+
             {/* Participants — visible to everyone on public, or to host on private */}
             {(activity.is_public || isHost) && (
               <View style={styles.participantsSection}>
@@ -811,6 +960,8 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null)
 
   const [activities, setActivities] = useState<Activity[]>([])
+  const [friendsByActivity, setFriendsByActivity] = useState<Record<string, FriendParticipant[]>>({})
+  const [activeCategories, setActiveCategories] = useState<Set<ActivityCategory>>(new Set())
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const [region, setRegion] = useState<Region>({
@@ -821,18 +972,34 @@ export default function MapScreen() {
   })
   const [refreshing, setRefreshing] = useState(false)
 
-  // ── Supercluster instance — rebuilt only when activities list changes ──
+  // ── Filter helpers ──
+  const toggleCategory = (id: ActivityCategory) => {
+    setActiveCategories((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const filteredActivities = useMemo(() =>
+    activeCategories.size === 0
+      ? activities
+      : activities.filter((a) => activeCategories.has(a.category)),
+    [activities, activeCategories]
+  )
+
+  // ── Supercluster instance — rebuilt only when filtered activities change ──
   const supercluster = useMemo(() => {
     const sc = new Supercluster<{ activity: Activity }>({ radius: 60, maxZoom: 15, minZoom: 1 })
     sc.load(
-      activities.map((a) => ({
+      filteredActivities.map((a) => ({
         type: 'Feature' as const,
         geometry: { type: 'Point' as const, coordinates: [a.longitude, a.latitude] },
         properties: { activity: a },
       }))
     )
     return sc
-  }, [activities])
+  }, [filteredActivities])
 
   // ── Clusters — recomputed on region change ──
   const clusters = useMemo(() => {
@@ -850,6 +1017,12 @@ export default function MapScreen() {
     if (!user) return
     const { data } = await activityService.getVisibleActivities(user.id)
     setActivities(data)
+    // Load friend participants in parallel (fire-and-forget style — non-blocking)
+    if (data.length) {
+      activityService
+        .getFriendParticipants(data.map(a => a.id), user.id)
+        .then(setFriendsByActivity)
+    }
   }, [user])
 
   useEffect(() => {
@@ -868,7 +1041,7 @@ export default function MapScreen() {
           },
           800
         )
-        setMapCenter({ lat: loc.coords.latitude, lng: loc.coords.longitude })
+        setRegion((r) => ({ ...r, latitude: loc.coords.latitude, longitude: loc.coords.longitude }))
       }
     })()
     loadActivities()
@@ -911,8 +1084,18 @@ export default function MapScreen() {
     setDetailVisible(true)
   }
 
-  const onRegionChange = (region: Region) => {
-    setMapCenter({ lat: region.latitude, lng: region.longitude })
+  const onClusterPress = (clusterId: number, coordinate: { latitude: number; longitude: number }) => {
+    const expansionZoom = Math.min(supercluster.getClusterExpansionZoom(clusterId), 15)
+    const delta = 360 / Math.pow(2, expansionZoom)
+    mapRef.current?.animateToRegion(
+      {
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        latitudeDelta: delta * 0.6,
+        longitudeDelta: delta * 0.6,
+      },
+      350
+    )
   }
 
   const onRefreshPress = async () => {
@@ -924,7 +1107,7 @@ export default function MapScreen() {
 
   const onCreatePress = () => {
     router.push(
-      `/activity/create?lat=${mapCenter.lat}&lng=${mapCenter.lng}` as any
+      `/activity/create?lat=${region.latitude}&lng=${region.longitude}` as any
     )
   }
 
@@ -963,17 +1146,74 @@ export default function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
-        onRegionChangeComplete={onRegionChange}
+        onRegionChangeComplete={setRegion}
       >
-        {jitteredActivities.map((a) => (
-          <ActivityMarker
-            key={a.id}
-            activity={a}
-            colors={colors}
-            onPress={() => onMarkerPress(a)}
-          />
-        ))}
+        {clusters.map((item) => {
+          const [lng, lat] = item.geometry.coordinates
+          const coordinate = { latitude: lat, longitude: lng }
+          const props = item.properties as any
+
+          if (props.cluster) {
+            return (
+              <ClusterMarker
+                key={`cluster-${props.cluster_id}`}
+                count={props.point_count as number}
+                coordinate={coordinate}
+                colors={colors}
+                onPress={() => onClusterPress(props.cluster_id as number, coordinate)}
+              />
+            )
+          }
+
+          const activity = props.activity as Activity
+          return (
+            <ActivityMarker
+              key={activity.id}
+              activity={activity}
+              friends={friendsByActivity[activity.id] ?? []}
+              colors={colors}
+              onPress={() => onMarkerPress(activity)}
+            />
+          )
+        })}
       </MapView>
+
+      {/* ── Category filter pills ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterBar}
+        contentContainerStyle={styles.filterBarContent}
+        pointerEvents='box-none'
+      >
+        {CATEGORIES.map((cat) => {
+          const active = activeCategories.has(cat.id)
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              onPress={() => toggleCategory(cat.id)}
+              activeOpacity={0.8}
+              style={[
+                styles.filterPill,
+                {
+                  backgroundColor: active ? cat.color : colors.surface,
+                  borderColor: active ? cat.color : colors.border,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 4,
+                  elevation: 3,
+                },
+              ]}
+            >
+              <Ionicons name={cat.icon as any} size={14} color={active ? '#fff' : colors.textSecondary} />
+              <Text style={[typography.caption, { fontWeight: '700', color: active ? '#fff' : colors.textSecondary }]}>
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
 
       {/* FAB — create activity */}
       <TouchableOpacity
@@ -1042,12 +1282,92 @@ const mStyles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
   },
+  friendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  friendAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    backgroundColor: '#ccc',
+  },
+  friendAvatarFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendInitial: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  friendExtra: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendExtraText: {
+    color: '#fff',
+    fontSize: 7,
+    fontWeight: '800',
+  },
+  clusterOuter: {
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  clusterInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#fff',
+  },
+  clusterText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: -0.3,
+  },
 })
 
 // ─── Sheet styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  filterBar: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 44,
+    left: 0,
+    right: 0,
+  },
+  filterBarContent: {
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    paddingVertical: 4,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.full,
+    borderWidth: 1.5,
+  },
   fab: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 108 : 92,
@@ -1159,6 +1479,29 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaCellDivider: { width: 1, marginVertical: spacing.sm },
+  weatherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  weatherBadge: {
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  cutoffBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
   participantsSection: { marginTop: spacing.sm },
   participantRow: {
     flexDirection: 'row',

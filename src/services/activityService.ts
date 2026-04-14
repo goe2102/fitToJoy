@@ -1,6 +1,8 @@
 import { supabase } from '../../lib/supabase'
 import { insertNotification } from './notificationService'
-import type { Activity, Participant, ParticipantStatus } from '@/types'
+import { sendPushToUser } from './pushService'
+import type { Activity, Participant, ParticipantStatus, RecurrenceType } from '@/types'
+import type { ActivityCategory } from '@/constants/categories'
 
 export interface CreateActivityInput {
   host_id: string
@@ -17,6 +19,13 @@ export interface CreateActivityInput {
   price?: number | null
   min_age?: number | null
   max_age?: number | null
+  join_cutoff_minutes?: number | null
+  is_outdoor?: boolean
+  category?: ActivityCategory
+  tags?: string[]
+  is_recurring?: boolean
+  recurrence?: RecurrenceType | null
+  parent_id?: string | null
 }
 
 export const activityService = {
@@ -75,10 +84,15 @@ export const activityService = {
     const { data, error } = await query
     if (error) return { data: [], error }
 
-    const mapped = (data ?? []).map((a: any) => ({
-      ...a,
-      participant_count: a.participant_count?.[0]?.count ?? 0,
-    }))
+    const mapped = (data ?? [])
+      .map((a: any) => ({
+        ...a,
+        participant_count: a.participant_count?.[0]?.count ?? 0,
+      }))
+      .filter(
+        (a: Activity) =>
+          !activityService.isJoinClosed(a.date, a.start_time, a.join_cutoff_minutes)
+      )
 
     return { data: mapped, error: null }
   },
@@ -152,6 +166,16 @@ export const activityService = {
       .maybeSingle()
     if (existing?.status === 'kicked') {
       return { error: new Error('You have been removed from this activity'), waitlisted: false }
+    }
+
+    // Check join cutoff
+    const { data: actInfo } = await supabase
+      .from('activities')
+      .select('date, start_time, join_cutoff_minutes')
+      .eq('id', activityId)
+      .single()
+    if (actInfo && activityService.isJoinClosed(actInfo.date, actInfo.start_time, actInfo.join_cutoff_minutes)) {
+      return { error: new Error('Joining is no longer available for this activity'), waitlisted: false }
     }
 
     // For public activities with a cap: check current count to decide waitlist
@@ -299,6 +323,14 @@ export const activityService = {
     return start.getTime() - Date.now()
   },
 
+  /** Returns true if joining is no longer allowed (cutoff has passed or activity started). */
+  isJoinClosed(date: string, startTime: string, joinCutoffMinutes: number | null): boolean {
+    const msUntil = activityService.msUntilStart(date, startTime)
+    if (msUntil <= 0) return true // already started
+    if (joinCutoffMinutes == null) return false
+    return msUntil <= joinCutoffMinutes * 60 * 1000
+  },
+
   async markAsFinished(activityId: string): Promise<{ error: Error | null }> {
     // Fetch to verify start time has passed
     const { data: act } = await supabase
@@ -317,7 +349,77 @@ export const activityService = {
       .update({ status: 'finished' })
       .eq('id', activityId)
 
+    // Notify all joined/approved participants via direct push (not DB trigger — faster + shows banner)
+    if (!error) {
+      const { data: parts } = await supabase
+        .from('participants')
+        .select('user_id')
+        .eq('activity_id', activityId)
+        .in('status', ['joined', 'approved'])
+      if (parts) {
+        const notifPayload = { activity_id: activityId, activity_title: act.title }
+        parts.forEach((p) => {
+          insertNotification(p.user_id, 'activity_started', notifPayload)
+          sendPushToUser(p.user_id, 'activity_started', notifPayload)
+        })
+      }
+    }
+
     return { error }
+  },
+
+  /** Create the next session of a recurring activity, shifted by recurrence interval.
+   *  Notifies all previous joined/approved participants. Returns the new activity. */
+  async scheduleNextSession(prev: Activity): Promise<{ data: Activity | null; error: Error | null }> {
+    const daysToAdd = prev.recurrence === 'weekly' ? 7 : prev.recurrence === 'biweekly' ? 14 : 30
+
+    const [y, mo, d] = prev.date.split('-').map(Number)
+    const nextDate = new Date(y, mo - 1, d + daysToAdd)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const nextDateStr = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}`
+
+    const { data: newActivity, error } = await activityService.create({
+      host_id: prev.host_id,
+      title: prev.title,
+      description: prev.description ?? undefined,
+      latitude: prev.latitude,
+      longitude: prev.longitude,
+      date: nextDateStr,
+      start_time: prev.start_time,
+      duration_minutes: prev.duration_minutes,
+      is_public: prev.is_public,
+      max_participants: prev.max_participants,
+      cover_image_url: prev.cover_image_url,
+      price: prev.price,
+      min_age: prev.min_age,
+      max_age: prev.max_age,
+      join_cutoff_minutes: prev.join_cutoff_minutes,
+      is_outdoor: prev.is_outdoor,
+      category: prev.category,
+      tags: prev.tags ?? [],
+      is_recurring: true,
+      recurrence: prev.recurrence,
+      parent_id: prev.parent_id ?? prev.id,
+    })
+
+    if (!error && newActivity) {
+      // Notify all joined/approved participants from previous session
+      const { data: parts } = await supabase
+        .from('participants')
+        .select('user_id')
+        .eq('activity_id', prev.id)
+        .in('status', ['joined', 'approved'])
+
+      if (parts) {
+        const payload = { activity_id: newActivity.id, activity_title: newActivity.title, date: nextDateStr }
+        parts.forEach((p) => {
+          insertNotification(p.user_id, 'next_session_scheduled', payload)
+          sendPushToUser(p.user_id, 'next_session_scheduled', payload)
+        })
+      }
+    }
+
+    return { data: newActivity, error }
   },
 
   async updateActivity(
@@ -376,11 +478,77 @@ export const activityService = {
       .maybeSingle()
 
     if (act) {
-      insertNotification(next.user_id, 'join_approved', {
+      insertNotification(next.user_id, 'waitlist_promoted', {
         activity_id: activityId,
         activity_title: act.title,
       })
     }
+  },
+
+  async checkIn(activityId: string, userId: string): Promise<{ error: Error | null }> {
+    const { error } = await supabase
+      .from('participants')
+      .update({ checked_in: true })
+      .eq('activity_id', activityId)
+      .eq('user_id', userId)
+      .in('status', ['joined', 'approved'])
+    return { error }
+  },
+
+  /** For a list of activity IDs, returns a map of activityId → friend profiles joined.
+   *  "Friends" = users the current user follows with accepted status. */
+  async getFriendParticipants(
+    activityIds: string[],
+    currentUserId: string
+  ): Promise<Record<string, { user_id: string; username: string; avatar_url: string | null }[]>> {
+    if (!activityIds.length) return {}
+
+    const { data: follows } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', currentUserId)
+      .eq('status', 'accepted')
+
+    const followingIds = (follows ?? []).map((f: any) => f.following_id)
+    if (!followingIds.length) return {}
+
+    const { data: parts } = await supabase
+      .from('participants')
+      .select('activity_id, user_id, profile:profiles!participants_user_id_fkey(id, username, avatar_url)')
+      .in('activity_id', activityIds)
+      .in('status', ['joined', 'approved'])
+      .in('user_id', followingIds)
+
+    const result: Record<string, { user_id: string; username: string; avatar_url: string | null }[]> = {}
+    for (const p of parts ?? []) {
+      const profile = Array.isArray((p as any).profile) ? (p as any).profile[0] : (p as any).profile
+      if (!profile) continue
+      if (!result[p.activity_id]) result[p.activity_id] = []
+      result[p.activity_id].push({ user_id: p.user_id, username: profile.username, avatar_url: profile.avatar_url })
+    }
+    return result
+  },
+
+  async getMyCheckedIn(activityId: string, userId: string): Promise<boolean> {
+    const { data } = await supabase
+      .from('participants')
+      .select('checked_in')
+      .eq('activity_id', activityId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    return data?.checked_in ?? false
+  },
+
+  async getWaitlistPosition(activityId: string, userId: string): Promise<number | null> {
+    const { data } = await supabase
+      .from('participants')
+      .select('user_id, created_at')
+      .eq('activity_id', activityId)
+      .eq('status', 'waitlisted')
+      .order('created_at', { ascending: true })
+    if (!data) return null
+    const idx = data.findIndex((p: any) => p.user_id === userId)
+    return idx >= 0 ? idx + 1 : null
   },
 
   async getWaitlist(activityId: string): Promise<{ data: Participant[]; error: Error | null }> {

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { Button, Input, OtpInput } from '@/components/ui'
@@ -29,6 +30,7 @@ function ForgotPasswordModal({
   onClose: () => void
 }) {
   const colors = useColors()
+  const { t } = useTranslation()
   const insets = useSafeAreaInsets()
   const { sendPasswordReset, verifyPasswordReset, updatePassword } = useAuth()
 
@@ -56,7 +58,7 @@ function ForgotPasswordModal({
 
   const handleSendCode = async () => {
     if (!/\S+@\S+\.\S+/.test(email.trim())) {
-      setError('Please enter a valid email address.')
+      setError(t('auth.forgotPassword.invalidEmail'))
       return
     }
     setError('')
@@ -72,7 +74,7 @@ function ForgotPasswordModal({
 
   const handleVerifyCode = async () => {
     if (code.length < 8) {
-      setError('Please enter the full code.')
+      setError(t('auth.forgotPassword.enterFullCode'))
       return
     }
     setError('')
@@ -83,7 +85,7 @@ function ForgotPasswordModal({
     )
     setLoading(false)
     if (err) {
-      setError('Invalid or expired code. Try again.')
+      setError(t('auth.forgotPassword.invalidCode'))
       setCode('')
       return
     }
@@ -92,11 +94,11 @@ function ForgotPasswordModal({
 
   const handleUpdatePassword = async () => {
     if (password.length < 8) {
-      setError('At least 8 characters.')
+      setError(t('auth.forgotPassword.passwordTooShort'))
       return
     }
     if (password !== confirm) {
-      setError('Passwords do not match.')
+      setError(t('auth.forgotPassword.passwordMismatch'))
       return
     }
     setError('')
@@ -111,10 +113,10 @@ function ForgotPasswordModal({
   }
 
   const stepTitle: Record<FPStep, string> = {
-    email: 'Forgot Password',
-    code: 'Enter Code',
-    password: 'New Password',
-    done: 'All Done',
+    email: t('auth.forgotPassword.title'),
+    code: t('auth.forgotPassword.enterCodeTitle'),
+    password: t('auth.forgotPassword.newPasswordTitle'),
+    done: t('auth.forgotPassword.allDoneTitle'),
   }
 
   return (
@@ -154,14 +156,14 @@ function ForgotPasswordModal({
                   },
                 ]}
               >
-                Enter your email and we'll send you a reset code.
+                {t('auth.forgotPassword.emailInstruction')}
               </Text>
               <Input
-                label='Email'
-                placeholder='you@example.com'
+                label={t('auth.forgotPassword.emailLabel')}
+                placeholder={t('auth.forgotPassword.emailPlaceholder')}
                 value={email}
-                onChangeText={(t) => {
-                  setEmail(t)
+                onChangeText={(v) => {
+                  setEmail(v)
                   setError('')
                 }}
                 keyboardType='email-address'
@@ -170,7 +172,7 @@ function ForgotPasswordModal({
                 error={error || undefined}
               />
               <Button
-                title='Send Code'
+                title={t('auth.forgotPassword.sendCode')}
                 onPress={handleSendCode}
                 loading={loading}
                 style={{ marginTop: spacing.lg }}
@@ -191,11 +193,11 @@ function ForgotPasswordModal({
                   },
                 ]}
               >
-                We sent a code to{' '}
+                {t('auth.forgotPassword.codeSentTo')}{' '}
                 <Text style={{ color: colors.primary, fontWeight: '600' }}>
                   {email}
                 </Text>
-                .{'\n'}Enter it below.
+                {t('auth.forgotPassword.enterBelow')}
               </Text>
               <OtpInput
                 value={code}
@@ -220,7 +222,7 @@ function ForgotPasswordModal({
                 </Text>
               ) : null}
               <Button
-                title='Verify Code'
+                title={t('auth.forgotPassword.verifyCode')}
                 onPress={handleVerifyCode}
                 loading={loading}
                 disabled={code.length < 8}
@@ -240,7 +242,7 @@ function ForgotPasswordModal({
                     { color: colors.primary, fontWeight: '600' },
                   ]}
                 >
-                  Wrong email or didn't receive it?
+                  {t('auth.forgotPassword.wrongEmail')}
                 </Text>
               </TouchableOpacity>
             </>
@@ -255,14 +257,14 @@ function ForgotPasswordModal({
                   { color: colors.textSecondary, marginBottom: spacing.lg },
                 ]}
               >
-                Choose a new password for your account.
+                {t('auth.forgotPassword.chooseNewPassword')}
               </Text>
               <Input
-                label='New password'
-                placeholder='Min. 8 characters'
+                label={t('auth.forgotPassword.newPasswordLabel')}
+                placeholder={t('auth.forgotPassword.newPasswordPlaceholder')}
                 value={password}
-                onChangeText={(t) => {
-                  setPassword(t)
+                onChangeText={(v) => {
+                  setPassword(v)
                   setError('')
                 }}
                 secureTextEntry
@@ -270,18 +272,18 @@ function ForgotPasswordModal({
               />
               <View style={{ height: spacing.md }} />
               <Input
-                label='Confirm password'
-                placeholder='••••••••'
+                label={t('auth.forgotPassword.confirmPasswordLabel')}
+                placeholder={t('auth.forgotPassword.confirmPasswordPlaceholder')}
                 value={confirm}
-                onChangeText={(t) => {
-                  setConfirm(t)
+                onChangeText={(v) => {
+                  setConfirm(v)
                   setError('')
                 }}
                 secureTextEntry
                 error={error || undefined}
               />
               <Button
-                title='Update Password'
+                title={t('auth.forgotPassword.updatePassword')}
                 onPress={handleUpdatePassword}
                 loading={loading}
                 disabled={!password || !confirm}
@@ -314,7 +316,7 @@ function ForgotPasswordModal({
                   },
                 ]}
               >
-                Password updated!
+                {t('auth.forgotPassword.successTitle')}
               </Text>
               <Text
                 style={[
@@ -322,10 +324,10 @@ function ForgotPasswordModal({
                   { color: colors.textSecondary, textAlign: 'center' },
                 ]}
               >
-                You can now sign in with your new password.
+                {t('auth.forgotPassword.successSubtitle')}
               </Text>
               <Button
-                title='Sign in'
+                title={t('auth.forgotPassword.signIn')}
                 onPress={handleClose}
                 style={{ marginTop: spacing.xl, width: '100%' }}
               />
@@ -369,6 +371,7 @@ const fpStyles = StyleSheet.create({
 
 export default function LoginScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { signIn } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -379,7 +382,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      setError('Please fill in all fields.')
+      setError(t('auth.login.fillAllFields'))
       return
     }
     setError('')
@@ -407,17 +410,17 @@ export default function LoginScreen() {
           <Text style={s.appName}>
             fit<Text style={{ color: colors.primary }}>ToJoy</Text>
           </Text>
-          <Text style={s.tagline}>Move together, feel better.</Text>
+          <Text style={s.tagline}>{t('auth.login.tagline')}</Text>
         </View>
 
         {/* Form */}
         <View style={s.form}>
           <Input
-            label='Email'
-            placeholder='you@example.com'
+            label={t('auth.login.emailLabel')}
+            placeholder={t('auth.login.emailPlaceholder')}
             value={email}
-            onChangeText={(t) => {
-              setEmail(t)
+            onChangeText={(v) => {
+              setEmail(v)
               setError('')
             }}
             keyboardType='email-address'
@@ -425,11 +428,11 @@ export default function LoginScreen() {
           />
 
           <Input
-            label='Password'
-            placeholder='••••••••'
+            label={t('auth.login.passwordLabel')}
+            placeholder={t('auth.login.passwordPlaceholder')}
             value={password}
-            onChangeText={(t) => {
-              setPassword(t)
+            onChangeText={(v) => {
+              setPassword(v)
               setError('')
             }}
             secureTextEntry
@@ -440,19 +443,19 @@ export default function LoginScreen() {
             style={s.forgotRow}
             onPress={() => setForgotVisible(true)}
           >
-            <Text style={s.forgotText}>Forgot password?</Text>
+            <Text style={s.forgotText}>{t('auth.login.forgotPassword')}</Text>
           </TouchableOpacity>
 
           {error ? <Text style={s.errorText}>{error}</Text> : null}
 
-          <Button title='Sign In' onPress={handleLogin} loading={loading} />
+          <Button title={t('auth.login.signIn')} onPress={handleLogin} loading={loading} />
         </View>
 
         {/* Footer */}
         <View style={s.footer}>
-          <Text style={s.footerText}>Don't have an account?</Text>
+          <Text style={s.footerText}>{t('auth.login.noAccount')}</Text>
           <TouchableOpacity onPress={() => router.replace('/(auth)/signup')}>
-            <Text style={s.footerLink}> Create one</Text>
+            <Text style={s.footerLink}>{t('auth.login.createOne')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

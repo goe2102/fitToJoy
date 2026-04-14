@@ -62,6 +62,7 @@ export const notificationService = {
 export function notificationText(n: Notification): string {
   const p = n.payload as any
   switch (n.type) {
+    case 'new_follower':     return `@${p.from_username} now follows you`
     case 'follow_request':   return `@${p.from_username} wants to follow you`
     case 'follow_accepted':  return `@${p.from_username} accepted your follow request`
     case 'join_request':     return `@${p.from_username} wants to join "${p.activity_title}"`
@@ -73,13 +74,16 @@ export function notificationText(n: Notification): string {
     case 'kicked_from_activity': return `You were removed from "${p.activity_title}"`
     case 'new_message': return `@${p.from_username}: ${p.preview}`
     case 'new_group_message': return `@${p.from_username} in ${p.chat_title}: ${p.preview}`
-    case 'activity_started': return `"${p.activity_title}" has started!`
+    case 'activity_started': return `"${p.activity_title}" has started! Don't forget to check in`
+    case 'waitlist_promoted': return `You got a spot in "${p.activity_title}"! Congrats`
+    case 'next_session_scheduled': return `Next session of "${p.activity_title}" is now open — join up!`
     default: return 'New notification'
   }
 }
 
 export function notificationIcon(type: NotificationType): string {
   switch (type) {
+    case 'new_follower':     return 'person-add-outline'
     case 'follow_request':   return 'person-add-outline'
     case 'follow_accepted':  return 'checkmark-circle-outline'
     case 'join_request':     return 'enter-outline'
@@ -92,12 +96,15 @@ export function notificationIcon(type: NotificationType): string {
     case 'new_message':       return 'chatbubble-outline'
     case 'new_group_message': return 'chatbubbles-outline'
     case 'activity_started':  return 'play-circle-outline'
+    case 'waitlist_promoted': return 'trophy-outline'
+    case 'next_session_scheduled': return 'refresh-circle-outline'
     default: return 'notifications-outline'
   }
 }
 
 export function notificationColor(type: NotificationType, colors: { primary: string; error: string; success: string; warning: string; textSecondary: string }): string {
   switch (type) {
+    case 'new_follower':
     case 'follow_request':
     case 'join_request':
     case 'joined_activity':  return colors.primary
@@ -107,6 +114,8 @@ export function notificationColor(type: NotificationType, colors: { primary: str
     case 'kicked_from_activity':
     case 'activity_cancelled': return colors.error
     case 'activity_updated': return colors.warning
+    case 'waitlist_promoted': return colors.success
+    case 'next_session_scheduled': return colors.primary
     default: return colors.textSecondary
   }
 }

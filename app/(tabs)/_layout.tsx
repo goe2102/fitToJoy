@@ -2,17 +2,18 @@ import React, { useEffect, useMemo, useRef } from 'react'
 import { Animated, StyleSheet, View, Platform } from 'react-native'
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useColors } from '@/hooks/useColors'
 import { useUnread } from '@/context/UnreadContext'
 import { type AppColors } from '@/constants/theme'
 
 // ─── Tab config ──────────────────────────────────────────────────────────────
 
-const TABS = [
-  { name: 'index',   label: 'Map',     icon: 'map'         },
-  { name: 'search',  label: 'Search',  icon: 'search'      },
-  { name: 'chats',   label: 'Chats',   icon: 'chatbubble'  },
-  { name: 'profile', label: 'Profile', icon: 'person'      },
+const TAB_NAMES = [
+  { name: 'index',   key: 'tabs.map'     as const, icon: 'map'         },
+  { name: 'search',  key: 'tabs.search'  as const, icon: 'search'      },
+  { name: 'chats',   key: 'tabs.chats'   as const, icon: 'chatbubble'  },
+  { name: 'profile', key: 'tabs.profile' as const, icon: 'person'      },
 ] as const
 
 // ─── Animated Tab Icon ───────────────────────────────────────────────────────
@@ -68,15 +69,16 @@ function TabIcon({
 
 export default function AppLayout() {
   const colors = useColors()
+  const { t } = useTranslation()
   const styles = useMemo(() => makeBarStyles(colors), [colors])
   const { messageCount } = useUnread()
 
   return (
     <Tabs
       screenOptions={({ route }) => {
-        const tab = TABS.find((t) => t.name === route.name)
+        const tab = TAB_NAMES.find((tb) => tb.name === route.name)
         const iconName = (tab?.icon ?? 'ellipse') as React.ComponentProps<typeof Ionicons>['name']
-        const label = tab?.label ?? route.name
+        const label = tab ? t(tab.key) : route.name
 
         return {
           headerShown: false,
@@ -96,12 +98,12 @@ export default function AppLayout() {
         }
       }}
     >
-      {TABS.map((tab) => (
+      {TAB_NAMES.map((tab) => (
         <Tabs.Screen
           key={tab.name}
           name={tab.name}
           options={{
-            title: tab.label,
+            title: t(tab.key),
             tabBarBadge: tab.name === 'chats' && messageCount > 0
               ? messageCount
               : undefined,

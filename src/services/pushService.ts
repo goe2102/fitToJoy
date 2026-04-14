@@ -16,7 +16,8 @@ function pushTitle(type: NotificationType): string {
     case 'kicked_from_activity':  return 'Removed from Activity'
     case 'new_message':           return 'New Message'
     case 'new_group_message':     return 'New Group Message'
-    case 'activity_started':      return 'Activity Starting Now 🏃'
+    case 'activity_started':          return 'Activity Starting Now 🏃'
+    case 'next_session_scheduled':    return 'Next Session Scheduled 🔁'
     default: return 'fitToJoy'
   }
 }
@@ -35,7 +36,8 @@ function pushBody(type: NotificationType, payload: Record<string, unknown>): str
     case 'kicked_from_activity':  return `You were removed from "${p.activity_title}"`
     case 'new_message':           return `@${p.from_username}: ${p.preview}`
     case 'new_group_message':     return `@${p.from_username} in ${p.chat_title}: ${p.preview}`
-    case 'activity_started':      return `"${p.activity_title}" has started!`
+    case 'activity_started':          return `"${p.activity_title}" has started! Don't forget to check in`
+    case 'next_session_scheduled':    return `Next session of "${p.activity_title}" is now open — join up!`
     default: return 'You have a new notification'
   }
 }

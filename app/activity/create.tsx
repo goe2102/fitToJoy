@@ -25,6 +25,8 @@ import { activityService } from '@/services/activityService'
 import { imageService } from '@/services/imageService'
 import { Input } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
+import type { RecurrenceType } from '@/types'
+import { CATEGORIES, type ActivityCategory } from '@/constants/categories'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,6 +143,9 @@ export default function CreateActivityScreen() {
   const [duration, setDuration] = useState(60)
   const [saving, setSaving] = useState(false)
 
+  // Indoor / outdoor
+  const [isOutdoor, setIsOutdoor] = useState(true)
+
   // Price
   const [price, setPrice] = useState('')
 
@@ -148,6 +153,21 @@ export default function CreateActivityScreen() {
   const [hasAgeRestriction, setHasAgeRestriction] = useState(false)
   const [minAge, setMinAge] = useState('')
   const [maxAge, setMaxAge] = useState('')
+
+  // Join cutoff
+  const [hasCutoff, setHasCutoff] = useState(false)
+  const [cutoffMinutes, setCutoffMinutes] = useState(60)
+
+  // Category
+  const [category, setCategory] = useState<ActivityCategory>('social')
+
+  // Tags
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+
+  // Recurrence
+  const [isRecurring, setIsRecurring] = useState(false)
+  const [recurrence, setRecurrence] = useState<RecurrenceType>('weekly')
 
   // Location
   const [latitude, setLatitude] = useState(parseFloat(params.lat ?? '48.1351'))
@@ -177,6 +197,17 @@ export default function CreateActivityScreen() {
   const [activePicker, setActivePicker] = useState<ActivePicker>(null)
   const togglePicker = (p: ActivePicker) =>
     setActivePicker((prev) => (prev === p ? null : p))
+
+  // Returns true if the selected date is today (local date comparison)
+  const isToday = toDateString(date) === toDateString(new Date())
+
+  // Earliest selectable time when today is selected — rounded up to the next minute
+  const minTimeToday = (() => {
+    const now = new Date()
+    now.setSeconds(0, 0)
+    now.setMinutes(now.getMinutes() + 1)
+    return now
+  })()
 
   // Fetch current location on mount
   useEffect(() => {
@@ -276,6 +307,7 @@ export default function CreateActivityScreen() {
     const parsedPrice = price.trim() ? parseFloat(price.replace(',', '.')) : null
     const parsedMin = hasAgeRestriction && minAge.trim() ? parseInt(minAge, 10) : null
     const parsedMax = hasAgeRestriction && maxAge.trim() ? parseInt(maxAge, 10) : null
+    const parsedCutoff = hasCutoff ? cutoffMinutes : null
 
     const { error } = await activityService.create({
       host_id: user.id,
@@ -292,6 +324,12 @@ export default function CreateActivityScreen() {
       price: parsedPrice,
       min_age: parsedMin,
       max_age: parsedMax,
+      join_cutoff_minutes: parsedCutoff,
+      is_outdoor: isOutdoor,
+      category,
+      tags,
+      is_recurring: isRecurring,
+      recurrence: isRecurring ? recurrence : null,
     })
     setSaving(false)
 
@@ -463,6 +501,111 @@ export default function CreateActivityScreen() {
           numberOfLines={3}
         />
 
+        {/* ── Category ── */}
+        <SectionLabel title='Category' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, padding: spacing.sm }]}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            {CATEGORIES.map((cat) => {
+              const active = category === cat.id
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  onPress={() => setCategory(cat.id)}
+                  activeOpacity={0.75}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingVertical: 9,
+                    paddingHorizontal: spacing.md,
+                    borderRadius: radius.full,
+                    borderWidth: 1.5,
+                    backgroundColor: active ? cat.color : colors.surfaceElevated,
+                    borderColor: active ? cat.color : colors.border,
+                  }}
+                >
+                  <Ionicons name={cat.icon as any} size={15} color={active ? '#fff' : colors.textMuted} />
+                  <Text style={[typography.label, { color: active ? '#fff' : colors.textSecondary }]}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </View>
+
+        {/* ── Tags ── */}
+        <SectionLabel title='Tags (Optional · max 5)' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {tags.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md }}>
+              {tags.map((tag) => (
+                <TouchableOpacity
+                  key={tag}
+                  onPress={() => setTags((prev) => prev.filter((t) => t !== tag))}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingVertical: 5,
+                    paddingHorizontal: spacing.sm,
+                    borderRadius: radius.full,
+                    backgroundColor: colors.primary + '15',
+                    borderWidth: 1,
+                    borderColor: colors.primary + '40',
+                  }}
+                >
+                  <Text style={[typography.caption, { color: colors.primary, fontWeight: '600' }]}>#{tag}</Text>
+                  <Ionicons name='close' size={12} color={colors.primary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {tags.length < 5 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <TextInput
+                style={[typography.body, { flex: 1, color: colors.text }]}
+                placeholder='Add a tag… (e.g. chill, 21+, beer)'
+                placeholderTextColor={colors.textMuted}
+                value={tagInput}
+                onChangeText={(v) => setTagInput(v.replace(/\s/g, '').toLowerCase())}
+                autoCapitalize='none'
+                autoCorrect={false}
+                returnKeyType='done'
+                onSubmitEditing={() => {
+                  const t = tagInput.trim().toLowerCase()
+                  if (t && !tags.includes(t) && tags.length < 5) {
+                    setTags((prev) => [...prev, t])
+                    setTagInput('')
+                  }
+                }}
+              />
+              <TouchableOpacity
+                onPress={() => {
+                  const t = tagInput.trim().toLowerCase()
+                  if (t && !tags.includes(t) && tags.length < 5) {
+                    setTags((prev) => [...prev, t])
+                    setTagInput('')
+                  }
+                }}
+                disabled={!tagInput.trim()}
+                style={{
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: 6,
+                  borderRadius: radius.full,
+                  backgroundColor: tagInput.trim() ? colors.primary : colors.surfaceElevated,
+                }}
+              >
+                <Text style={[typography.label, { color: tagInput.trim() ? '#fff' : colors.textMuted }]}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {tags.length >= 5 && (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>Maximum 5 tags reached</Text>
+          )}
+        </View>
+
         {/* ── Location ── */}
         <SectionLabel title='Location' colors={colors} />
 
@@ -627,7 +770,21 @@ export default function CreateActivityScreen() {
                 minimumDate={new Date()}
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
                 onChange={(_, d) => {
-                  if (d) setDate(d)
+                  if (d) {
+                    setDate(d)
+                    // If user picked today and the current time value is in the past, snap forward
+                    const pickedIsToday = toDateString(d) === toDateString(new Date())
+                    if (pickedIsToday) {
+                      const now = new Date()
+                      const timeCopy = new Date(time)
+                      timeCopy.setFullYear(now.getFullYear(), now.getMonth(), now.getDate())
+                      if (timeCopy <= now) {
+                        const snapped = new Date(now)
+                        snapped.setMinutes(snapped.getMinutes() + 30, 0, 0)
+                        setTime(snapped)
+                      }
+                    }
+                  }
                   if (Platform.OS !== 'ios') togglePicker(null)
                 }}
                 themeVariant={isDark ? 'dark' : 'light'}
@@ -658,9 +815,20 @@ export default function CreateActivityScreen() {
               <DateTimePicker
                 mode='time'
                 value={time}
+                minimumDate={isToday ? minTimeToday : undefined}
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={(_, t) => {
-                  if (t) setTime(t)
+                  if (t) {
+                    // On Android the picker doesn't enforce minimumDate for time mode,
+                    // so we guard it manually.
+                    if (isToday) {
+                      const now = new Date()
+                      const candidate = new Date(t)
+                      candidate.setFullYear(now.getFullYear(), now.getMonth(), now.getDate())
+                      if (candidate <= now) return
+                    }
+                    setTime(t)
+                  }
                   if (Platform.OS !== 'ios') togglePicker(null)
                 }}
                 themeVariant={isDark ? 'dark' : 'light'}
@@ -765,6 +933,50 @@ export default function CreateActivityScreen() {
               thumbColor={colors.white}
             />
           </View>
+        </View>
+
+        {/* ── Indoor / Outdoor ── */}
+        <SectionLabel title='Venue Type' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, padding: 0, overflow: 'hidden' }]}>
+          <View style={{ flexDirection: 'row' }}>
+            {([
+              { label: 'Outdoor', icon: 'sunny-outline',  value: true  },
+              { label: 'Indoor',  icon: 'home-outline',   value: false },
+            ] as const).map(({ label, icon, value }, i) => {
+              const active = isOutdoor === value
+              return (
+                <TouchableOpacity
+                  key={label}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: spacing.sm,
+                    paddingVertical: spacing.md + 2,
+                    backgroundColor: active ? colors.primary : 'transparent',
+                    borderRightWidth: i === 0 ? StyleSheet.hairlineWidth : 0,
+                    borderRightColor: colors.border,
+                  }}
+                  onPress={() => setIsOutdoor(value)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={icon} size={18} color={active ? colors.white : colors.textSecondary} />
+                  <Text style={[typography.label, { color: active ? colors.white : colors.textSecondary }]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+          {isOutdoor && (
+            <View style={[styles.infoNote, { backgroundColor: colors.primary + '10', margin: spacing.sm, marginTop: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.primary + '25', borderRadius: 0, borderBottomLeftRadius: radius.md, borderBottomRightRadius: radius.md }]}>
+              <Ionicons name='partly-sunny-outline' size={13} color={colors.primary} />
+              <Text style={[typography.caption, { color: colors.primary, flex: 1 }]}>
+                Weather forecast will be shown to participants
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* ── Participants ── */}
@@ -876,6 +1088,139 @@ export default function CreateActivityScreen() {
           )}
         </View>
 
+        {/* ── Join Cutoff ── */}
+        <SectionLabel title='Join Window (Optional)' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.label, { color: colors.text }]}>Limit join window</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                Stop accepting joins before the activity starts
+              </Text>
+            </View>
+            <Switch
+              value={hasCutoff}
+              onValueChange={setHasCutoff}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor={colors.white}
+            />
+          </View>
+          {hasCutoff && (
+            <>
+              <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.md }]} />
+              <Text style={[typography.caption, { color: colors.textMuted, marginBottom: spacing.sm }]}>
+                Close joining this long before the start
+              </Text>
+
+              {/* Preset pills */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}
+                keyboardShouldPersistTaps='handled'
+              >
+                {[
+                  { label: '15 min', value: 15 },
+                  { label: '30 min', value: 30 },
+                  { label: '1 h',    value: 60 },
+                  { label: '2 h',    value: 120 },
+                  { label: '3 h',    value: 180 },
+                  { label: '6 h',    value: 360 },
+                  { label: '12 h',   value: 720 },
+                  { label: '24 h',   value: 1440 },
+                ].map(({ label, value }) => {
+                  const active = cutoffMinutes === value
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      style={[
+                        styles.durationPill,
+                        {
+                          backgroundColor: active ? colors.primary : colors.surfaceElevated,
+                          borderColor: active ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setCutoffMinutes(value)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[typography.label, { color: active ? colors.white : colors.text }]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </ScrollView>
+
+              <View style={[styles.infoNote, { backgroundColor: colors.primary + '12', marginTop: spacing.md }]}>
+                <Ionicons name='eye-off-outline' size={13} color={colors.primary} />
+                <Text style={[typography.caption, { color: colors.primary, flex: 1 }]}>
+                  The activity disappears from the map and joining is blocked once this window closes.
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* ── Recurring ── */}
+        <SectionLabel title='Recurrence (Optional)' colors={colors} />
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.label, { color: colors.text }]}>Recurring activity</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                Repeat this activity at a set interval
+              </Text>
+            </View>
+            <Switch
+              value={isRecurring}
+              onValueChange={setIsRecurring}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor={colors.white}
+            />
+          </View>
+          {isRecurring && (
+            <>
+              <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.md }]} />
+              <Text style={[typography.caption, { color: colors.textMuted, marginBottom: spacing.sm }]}>
+                How often does this repeat?
+              </Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                {([
+                  { label: 'Weekly',   value: 'weekly'   },
+                  { label: 'Biweekly', value: 'biweekly' },
+                  { label: 'Monthly',  value: 'monthly'  },
+                ] as { label: string; value: RecurrenceType }[]).map(({ label, value }) => {
+                  const active = recurrence === value
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      onPress={() => setRecurrence(value)}
+                      activeOpacity={0.75}
+                      style={[
+                        styles.durationPill,
+                        { flex: 1, justifyContent: 'center',
+                          backgroundColor: active ? colors.primary : colors.surfaceElevated,
+                          borderColor: active ? colors.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[typography.label, { color: active ? colors.white : colors.text }]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+              <View style={[styles.infoNote, { backgroundColor: colors.primary + '12', marginTop: spacing.md }]}>
+                <Ionicons name='refresh-circle-outline' size={13} color={colors.primary} />
+                <Text style={[typography.caption, { color: colors.primary, flex: 1 }]}>
+                  After each session you can schedule the next one with one tap. Previous participants get notified automatically.
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
         {/* ── Save button ── */}
         <View style={{ marginTop: spacing.xl }}>
           <TouchableOpacity
@@ -936,7 +1281,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     ...typography.caption,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,

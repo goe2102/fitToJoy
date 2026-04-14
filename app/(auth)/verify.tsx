@@ -8,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { Button, OtpInput } from '@/components/ui'
@@ -17,6 +18,7 @@ const RESEND_COOLDOWN = 60
 
 export default function VerifyScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { email } = useLocalSearchParams<{ email: string }>()
   const { verifyOtp, resendOtp } = useAuth()
 
@@ -34,7 +36,7 @@ export default function VerifyScreen() {
 
   const handleVerify = async () => {
     if (code.length < 8) {
-      setError('Please enter the full 8-digit code.')
+      setError(t('auth.forgotPassword.enterFullCode'))
       return
     }
     setError('')
@@ -42,7 +44,7 @@ export default function VerifyScreen() {
     const { error: err } = await verifyOtp(email!, code)
     setLoading(false)
     if (err) {
-      setError('Invalid or expired code. Please try again.')
+      setError(t('auth.forgotPassword.invalidCode'))
       setCode('')
     }
     // On success RouteGuard handles navigation to onboarding
@@ -73,9 +75,9 @@ export default function VerifyScreen() {
           <View style={s.iconCircle}>
             <Ionicons name='mail-outline' size={36} color={colors.primary} />
           </View>
-          <Text style={s.title}>Check your email</Text>
+          <Text style={s.title}>{t('auth.verify.title')}</Text>
           <Text style={s.subtitle}>
-            We sent an 8-digit code to{'\n'}
+            {t('auth.verify.subtitle')}{'\n'}
             <Text style={s.emailHighlight}>{email}</Text>
           </Text>
         </View>
@@ -88,7 +90,7 @@ export default function VerifyScreen() {
         {error ? <Text style={s.errorText}>{error}</Text> : null}
 
         <Button
-          title='Verify'
+          title={t('auth.verify.continueBtn')}
           onPress={handleVerify}
           loading={loading}
           disabled={code.length < 8}
@@ -97,10 +99,10 @@ export default function VerifyScreen() {
 
         {/* Resend */}
         <View style={s.resendRow}>
-          <Text style={s.resendText}>Didn't receive it? </Text>
+          <Text style={s.resendText}>{t('auth.forgotPassword.wrongEmail')} </Text>
           <TouchableOpacity onPress={handleResend} disabled={cooldown > 0 || resending}>
             <Text style={[s.resendLink, cooldown > 0 && s.resendDisabled]}>
-              {cooldown > 0 ? `Resend (${cooldown}s)` : 'Resend'}
+              {cooldown > 0 ? `${t('auth.verify.resend')} (${cooldown}s)` : t('auth.verify.resend')}
             </Text>
           </TouchableOpacity>
         </View>

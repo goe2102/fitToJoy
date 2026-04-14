@@ -20,6 +20,8 @@ import { supabase } from '../lib/supabase'
 import { followService } from '@/services/followService'
 import { activityService } from '@/services/activityService'
 import { notificationService, notificationText, notificationIcon, notificationColor } from '@/services/notificationService'
+import { useTranslation } from 'react-i18next'
+import { ScreenHeader } from '@/components/ui'
 import { radius, spacing, typography, type AppColors } from '@/constants/theme'
 import type { Follow, Notification, Profile } from '@/types'
 
@@ -53,6 +55,7 @@ type RequestWithFollower = Follow & { follower: Pick<Profile, 'id' | 'username' 
 
 export default function NotificationsScreen() {
   const colors = useColors()
+  const { t } = useTranslation()
   const { user } = useAuth()
   const { profile: myProfile } = useProfile()
   const { refreshNotifications } = useUnread()
@@ -155,13 +158,7 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.backBtn}>
-          <Ionicons name='chevron-back' size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[typography.h2, { color: colors.text }]}>Notifications</Text>
-      </View>
+      <ScreenHeader title={t('notifications.title')} onBack={() => router.back()} />
 
       <View style={{ flex: 1 }}>
       {loading ? (
@@ -171,8 +168,8 @@ export default function NotificationsScreen() {
           <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceElevated }]}>
             <Ionicons name='notifications-outline' size={32} color={colors.textMuted} />
           </View>
-          <Text style={[typography.label, { color: colors.text, marginTop: spacing.md }]}>All caught up</Text>
-          <Text style={[typography.caption, { color: colors.textMuted, marginTop: 4 }]}>No new notifications</Text>
+          <Text style={[typography.label, { color: colors.text, marginTop: spacing.md }]}>{t('notifications.empty')}</Text>
+          <Text style={[typography.caption, { color: colors.textMuted, marginTop: 4 }]}>{t('notifications.emptyHint')}</Text>
         </View>
       ) : (
         <FlatList
@@ -197,15 +194,15 @@ export default function NotificationsScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[typography.label, { color: colors.text }]}>@{r.follower?.username ?? '—'}</Text>
-                      <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>wants to follow you</Text>
+                      <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>{t('notifications.followRequest')}</Text>
                     </View>
                   </View>
                   <View style={styles.btnRow}>
                     <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary, flex: 1 }]} onPress={() => onAccept(r.follower_id)}>
-                      <Text style={[typography.label, { color: '#fff', fontSize: 13 }]}>Accept</Text>
+                      <Text style={[typography.label, { color: '#fff', fontSize: 13 }]}>{t('common.follow')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.btn, { backgroundColor: colors.surfaceElevated, flex: 1, borderWidth: 1, borderColor: colors.border }]} onPress={() => onDecline(r.follower_id)}>
-                      <Text style={[typography.label, { color: colors.textSecondary, fontSize: 13 }]}>Decline</Text>
+                      <Text style={[typography.label, { color: colors.textSecondary, fontSize: 13 }]}>{t('common.cancel')}</Text>
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
@@ -260,11 +257,11 @@ export default function NotificationsScreen() {
                   <View style={styles.btnRow}>
                     <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary, flex: 1 }]} onPress={() => onApproveJoin(n)}>
                       <Ionicons name='checkmark' size={14} color='#fff' />
-                      <Text style={[typography.label, { color: '#fff', fontSize: 13 }]}>Accept</Text>
+                      <Text style={[typography.label, { color: '#fff', fontSize: 13 }]}>{t('common.follow')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.btn, { backgroundColor: colors.surfaceElevated, flex: 1, borderWidth: 1, borderColor: colors.border }]} onPress={() => onDenyJoin(n)}>
                       <Ionicons name='close' size={14} color={colors.textSecondary} />
-                      <Text style={[typography.label, { color: colors.textSecondary, fontSize: 13 }]}>Deny</Text>
+                      <Text style={[typography.label, { color: colors.textSecondary, fontSize: 13 }]}>{t('common.cancel')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -282,8 +279,6 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
-  backBtn: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   card: { borderRadius: radius.lg, borderWidth: 1, borderLeftWidth: 4, overflow: 'hidden', padding: spacing.md, gap: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
