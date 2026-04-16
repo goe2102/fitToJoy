@@ -26,6 +26,7 @@ export interface CreateActivityInput {
   is_recurring?: boolean
   recurrence?: RecurrenceType | null
   parent_id?: string | null
+  checkin_mode?: 'button' | 'code'
 }
 
 export const activityService = {
@@ -493,6 +494,27 @@ export const activityService = {
       .eq('user_id', userId)
       .in('status', ['joined', 'approved'])
     return { error }
+  },
+
+  async checkInWithCode(activityId: string, userId: string, code: string): Promise<{ error: Error | null; wrongCode?: boolean }> {
+    const { data: act } = await supabase
+      .from('activities')
+      .select('checkin_code')
+      .eq('id', activityId)
+      .single()
+    if (!act?.checkin_code || act.checkin_code !== code.trim()) {
+      return { error: new Error('Wrong code'), wrongCode: true }
+    }
+    return activityService.checkIn(activityId, userId)
+  },
+
+  async generateCheckinCode(activityId: string): Promise<{ code: string | null; error: Error | null }> {
+    const code = String(Math.floor(1000 + Math.random() * 9000))
+    const { error } = await supabase
+      .from('activities')
+      .update({ checkin_code: code })
+      .eq('id', activityId)
+    return { code: error ? null : code, error }
   },
 
   /** For a list of activity IDs, returns a map of activityId → friend profiles joined.

@@ -85,6 +85,8 @@ export interface Activity {
   is_recurring: boolean
   recurrence: RecurrenceType | null
   parent_id: string | null
+  checkin_mode: 'button' | 'code'
+  checkin_code: string | null
   created_at: string
   updated_at: string
   // joined via query

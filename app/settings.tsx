@@ -615,6 +615,13 @@ export default function SettingsScreen() {
           />
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
+            icon='bookmark-outline'
+            label='Saved activities'
+            onPress={() => router.push('/saved-activities' as any)}
+            colors={colors}
+          />
+          <View style={[s.separator, { backgroundColor: colors.border }]} />
+          <SettingsRow
             icon='ban-outline'
             label='Blocked users'
             onPress={() => setBlockedModal(true)}

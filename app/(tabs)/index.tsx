@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   InteractionManager,
+  Share,
 } from 'react-native'
 import { useTranslation } from 'react-i18next'
 import MapView, {
@@ -29,6 +30,7 @@ import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { activityService } from '@/services/activityService'
+import { savedActivityService } from '@/services/savedActivityService'
 import { chatService } from '@/services/chatService'
 import { scheduleStartNotification, cancelStartNotification } from '@/utils/scheduleStartNotification'
 import { CATEGORIES, getCategoryMeta, type ActivityCategory } from '@/constants/categories'
@@ -296,6 +298,8 @@ function ActivityDetailSheet({
   const [loading, setLoading] = useState(false)
   const [joining, setJoining] = useState(false)
   const [weather, setWeather] = useState<WeatherData | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [savingToggle, setSavingToggle] = useState(false)
 
   const isHost = !!activity && activity.host?.id === currentUserId
 
@@ -315,6 +319,34 @@ function ActivityDetailSheet({
       setWaitlistPosition(null)
     }
   }, [activity?.id, currentUserId])
+
+  useEffect(() => {
+    if (!activity || !visible) return
+    savedActivityService.isSaved(currentUserId, activity.id).then(setSaved)
+  }, [activity?.id, visible])
+
+  const handleToggleSave = async () => {
+    if (!activity || savingToggle) return
+    setSavingToggle(true)
+    if (saved) {
+      await savedActivityService.unsave(currentUserId, activity.id)
+      setSaved(false)
+    } else {
+      await savedActivityService.save(currentUserId, activity.id)
+      setSaved(true)
+    }
+    setSavingToggle(false)
+  }
+
+  const handleShare = async () => {
+    if (!activity) return
+    const date = new Date(activity.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    const time = formatTime(activity.start_time)
+    await Share.share({
+      message: `Join me at "${activity.title}" on ${date} at ${time} — via fitToJoy`,
+      title: activity.title,
+    })
+  }
 
   useEffect(() => {
     if (!activity || !visible) return
@@ -551,14 +583,19 @@ function ActivityDetailSheet({
               style={StyleSheet.absoluteFillObject}
             />
 
-            {/* Close button */}
-            <TouchableOpacity
-              style={styles.heroClose}
-              onPress={onClose}
-              activeOpacity={0.8}
-            >
-              <Ionicons name='close' size={18} color='#fff' />
-            </TouchableOpacity>
+            {/* Hero button row */}
+            <View style={styles.heroButtonRow}>
+              <TouchableOpacity style={styles.heroClose} onPress={onClose} activeOpacity={0.8}>
+                <Ionicons name='close' size={18} color='#fff' />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity style={styles.heroClose} onPress={handleShare} activeOpacity={0.8}>
+                <Ionicons name='share-outline' size={18} color='#fff' />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.heroClose} onPress={handleToggleSave} activeOpacity={0.8}>
+                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={saved ? '#FFD700' : '#fff'} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* ── Title block (below image) ── */}
@@ -1501,17 +1538,22 @@ const styles = StyleSheet.create({
     height: 280,
     overflow: 'hidden',
   },
-  heroClose: {
+  heroButtonRow: {
     position: 'absolute',
     top: spacing.md,
+    left: spacing.md,
     right: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    zIndex: 10,
+  },
+  heroClose: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.38)',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
   },
   // ── Title block below hero ──
   sheetTitleBlock: {

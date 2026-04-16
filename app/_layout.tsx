@@ -36,7 +36,7 @@ function RouteGuard() {
     const seg0 = segments[0] as string | undefined
     const inAuthGroup  = seg0 === '(auth)'
     const inOnboarding = seg0 === '(onboarding)'
-    const inApp = seg0 === '(tabs)' || seg0 === 'activity' || seg0 === 'chat' || seg0 === 'profile' || seg0 === 'settings' || seg0 === 'group-chat' || seg0 === 'notifications' || seg0 === 'past-activity' || seg0 === 'photo-gallery' || seg0 === 'my-past-activities' || seg0 === 'activity-finished'
+    const inApp = seg0 === '(tabs)' || seg0 === 'activity' || seg0 === 'chat' || seg0 === 'profile' || seg0 === 'settings' || seg0 === 'group-chat' || seg0 === 'notifications' || seg0 === 'past-activity' || seg0 === 'photo-gallery' || seg0 === 'my-past-activities' || seg0 === 'activity-finished' || seg0 === 'saved-activities'
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login' as any)
@@ -85,6 +85,7 @@ function AppLayout() {
         <Stack.Screen name='past-activity/[id]' />
         <Stack.Screen name='photo-gallery' />
         <Stack.Screen name='my-past-activities' />
+        <Stack.Screen name='saved-activities' />
         <Stack.Screen name='activity-finished' options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       </Stack>
       <StatusBar style={resolved === 'light' ? 'dark' : 'light'} />

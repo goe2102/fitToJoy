@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Pressable,
+  KeyboardAvoidingView,
   Platform,
   InteractionManager,
   Animated,
   Dimensions,
+  TextInput,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -425,6 +428,10 @@ export default function ActivityManageScreen() {
   const [loading, setLoading] = useState(true)
   const [editVisible, setEditVisible] = useState(false)
   const [weather, setWeather] = useState<WeatherData | null>(null)
+  const [codeInput, setCodeInput] = useState('')
+  const [codeError, setCodeError] = useState(false)
+  const [codeModalVisible, setCodeModalVisible] = useState(false)
+  const [revealingCode, setRevealingCode] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!id || !user) return
@@ -623,6 +630,64 @@ export default function ActivityManageScreen() {
     setTimeout(() => {
       Animated.timing(ciOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setShowCheckInAnim(false))
     }, 2000)
+  }
+
+  const handleCheckInWithCode = async () => {
+    if (!activity || !user || checkingIn || codeInput.length !== 4) return
+    setCheckingIn(true)
+    const { error, wrongCode } = await activityService.checkInWithCode(activity.id, user.id, codeInput)
+    setCheckingIn(false)
+    if (wrongCode) {
+      setCodeError(true)
+      setTimeout(() => setCodeError(false), 1200)
+      return
+    }
+    if (error) { Alert.alert('Error', error.message); return }
+    setCodeModalVisible(false)
+    setMyCheckedIn(true)
+    // reuse existing animation trigger
+    ciCircleScale.setValue(0); ciCheckOpacity.setValue(0)
+    ciRing1Scale.setValue(1); ciRing1Opacity.setValue(0)
+    ciRing2Scale.setValue(1); ciRing2Opacity.setValue(0)
+    ciRing3Scale.setValue(1); ciRing3Opacity.setValue(0)
+    ciTextOpacity.setValue(0); ciTextTranslate.setValue(16)
+    ciOverlayOpacity.setValue(0)
+    setShowCheckInAnim(true)
+    const ring = (scale: Animated.Value, opacity: Animated.Value, delay: number) =>
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 0.6, duration: 1, useNativeDriver: true }),
+          Animated.parallel([
+            Animated.timing(scale, { toValue: 2.8, duration: 900, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 0, duration: 900, useNativeDriver: true }),
+          ]),
+        ]),
+      ])
+    Animated.parallel([
+      Animated.timing(ciOverlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(ciCircleScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
+      Animated.sequence([Animated.delay(200), Animated.timing(ciCheckOpacity, { toValue: 1, duration: 200, useNativeDriver: true })]),
+      ring(ciRing1Scale, ciRing1Opacity, 150),
+      ring(ciRing2Scale, ciRing2Opacity, 350),
+      ring(ciRing3Scale, ciRing3Opacity, 550),
+      Animated.sequence([Animated.delay(400), Animated.parallel([
+        Animated.timing(ciTextOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(ciTextTranslate, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ])]),
+    ]).start()
+    setTimeout(() => {
+      Animated.timing(ciOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setShowCheckInAnim(false))
+    }, 2000)
+  }
+
+  const handleRevealCode = async () => {
+    if (!activity || revealingCode) return
+    setRevealingCode(true)
+    const { code, error } = await activityService.generateCheckinCode(activity.id)
+    setRevealingCode(false)
+    if (error || !code) { Alert.alert('Error', 'Could not generate code.'); return }
+    setActivity((a) => a ? { ...a, checkin_code: code } : a)
   }
 
   const isDark = colors.text === '#F2F2F8'
@@ -900,6 +965,35 @@ export default function ActivityManageScreen() {
           </View>
         )}
 
+        {/* ── Check-in code card (host only, code mode, after start) ── */}
+        {isHost && hasStarted && activity.status === 'active' && activity.checkin_mode === 'code' && (
+          <View style={[styles.codeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.label, { color: colors.text }]}>Check-in Code</Text>
+              <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                Show this to participants so they can check in
+              </Text>
+            </View>
+            {activity.checkin_code ? (
+              <View style={[styles.codeBadge, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}>
+                <Text style={[styles.codeText, { color: colors.primary }]}>{activity.checkin_code}</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.revealBtn, { backgroundColor: colors.primary }]}
+                onPress={handleRevealCode}
+                disabled={revealingCode}
+                activeOpacity={0.8}
+              >
+                {revealingCode
+                  ? <ActivityIndicator size='small' color='#fff' />
+                  : <Text style={[typography.label, { color: '#fff' }]}>Reveal Code</Text>
+                }
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* ── Host card (visible to participants, not to host themselves) ── */}
         {isParticipant && !isHost && activity.host && (
           <TouchableOpacity
@@ -1126,13 +1220,11 @@ export default function ActivityManageScreen() {
         </View>{/* end scroll inner padding */}
       </ScrollView>
 
-      {/* ── Check-in sticky bottom button ── */}
+      {/* ── Check-in sticky bottom ── */}
       {showCheckIn && !myCheckedIn && (
         <View style={{
           position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
+          bottom: 0, left: 0, right: 0,
           paddingHorizontal: spacing.md,
           paddingBottom: spacing.lg,
           paddingTop: spacing.sm,
@@ -1141,7 +1233,10 @@ export default function ActivityManageScreen() {
           borderTopColor: colors.border,
         }}>
           <TouchableOpacity
-            onPress={handleCheckIn}
+            onPress={activity.checkin_mode === 'code'
+              ? () => { setCodeInput(''); setCodeError(false); setCodeModalVisible(true) }
+              : handleCheckIn
+            }
             activeOpacity={0.85}
             disabled={checkingIn}
             style={{
@@ -1154,17 +1249,101 @@ export default function ActivityManageScreen() {
               gap: spacing.sm,
             }}
           >
-            {checkingIn ? (
-              <ActivityIndicator size='small' color='#fff' />
-            ) : (
-              <>
-                <Ionicons name='location-outline' size={18} color='#fff' />
-                <Text style={[typography.label, { color: '#fff' }]}>Check In</Text>
-              </>
-            )}
+            {checkingIn
+              ? <ActivityIndicator size='small' color='#fff' />
+              : <>
+                  <Ionicons name='location-outline' size={18} color='#fff' />
+                  <Text style={[typography.label, { color: '#fff' }]}>Check In</Text>
+                </>
+            }
           </TouchableOpacity>
         </View>
       )}
+
+      {/* ── Code entry modal ── */}
+      <Modal
+        visible={codeModalVisible}
+        transparent
+        animationType='slide'
+        onRequestClose={() => setCodeModalVisible(false)}
+      >
+        <Pressable
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+          onPress={() => setCodeModalVisible(false)}
+        />
+        <KeyboardAvoidingView
+          style={{ flex: 1, justifyContent: 'flex-end' }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          pointerEvents='box-none'
+        >
+          <View style={[styles.codeModalPanel, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + 8, spacing.lg) }]}>
+            <Text style={[typography.h2, { color: colors.text, textAlign: 'center', marginBottom: 4 }]}>Enter Code</Text>
+            <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg }]}>
+              Ask your host for the 4-digit check-in code
+            </Text>
+
+            {/* 4 boxes + hidden input */}
+            <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                {[0, 1, 2, 3].map((i) => (
+                  <View
+                    key={i}
+                    style={[styles.codeBox, {
+                      borderColor: codeError
+                        ? colors.error
+                        : codeInput.length === i ? colors.primary
+                        : codeInput.length > i ? colors.primary + '60'
+                        : colors.border,
+                      backgroundColor: colors.surfaceElevated,
+                    }]}
+                  >
+                    <Text style={[styles.codeBoxText, { color: codeError ? colors.error : colors.text }]}>
+                      {codeInput[i] ?? ''}
+                    </Text>
+                  </View>
+                ))}
+                <TextInput
+                  style={StyleSheet.absoluteFillObject}
+                  value={codeInput}
+                  onChangeText={(v) => { setCodeError(false); setCodeInput(v.replace(/[^0-9]/g, '').slice(0, 4)) }}
+                  keyboardType='number-pad'
+                  maxLength={4}
+                  caretHidden
+                  autoFocus
+                  selectionColor='transparent'
+                  onSubmitEditing={handleCheckInWithCode}
+                />
+              </View>
+              {codeError && (
+                <Text style={[typography.caption, { color: colors.error, marginTop: spacing.sm }]}>
+                  Wrong code — try again
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              onPress={handleCheckInWithCode}
+              disabled={codeInput.length !== 4 || checkingIn}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: codeInput.length === 4 ? colors.primary : colors.border,
+                borderRadius: radius.full,
+                paddingVertical: spacing.md,
+                marginHorizontal: spacing.lg,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: spacing.sm,
+              }}
+            >
+              {checkingIn
+                ? <ActivityIndicator size='small' color='#fff' />
+                : <Text style={[typography.label, { color: '#fff' }]}>Check In</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* ── Sticky Join button ── */}
       {canJoin && (
@@ -1450,6 +1629,51 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
+  },
+  codeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  codeBadge: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  codeText: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 6,
+  },
+  revealBtn: {
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 110,
+  },
+  codeModalPanel: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: spacing.lg,
+  },
+  codeBox: {
+    width: 56,
+    height: 64,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  codeBoxText: {
+    fontSize: 28,
+    fontWeight: '700',
   },
   iconAction: {
     width: 32,

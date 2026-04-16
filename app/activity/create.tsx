@@ -140,6 +140,7 @@ export default function CreateActivityScreen() {
   const [isPublic, setIsPublic] = useState(true)
   const [maxParticipants, setMaxParticipants] = useState('')
   const [unlimited, setUnlimited] = useState(true)
+  const [checkinMode, setCheckinMode] = useState<'button' | 'code'>('button')
   const [duration, setDuration] = useState(60)
   const [saving, setSaving] = useState(false)
 
@@ -331,6 +332,7 @@ export default function CreateActivityScreen() {
       tags,
       is_recurring: isRecurring,
       recurrence: isRecurring ? recurrence : null,
+      checkin_mode: checkinMode,
     })
     setSaving(false)
 
@@ -1013,6 +1015,34 @@ export default function CreateActivityScreen() {
               </View>
             </>
           )}
+
+          <View style={[styles.rowDivider, { backgroundColor: colors.border, marginVertical: spacing.md }]} />
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.label, { color: colors.text }]}>Check-in mode</Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {checkinMode === 'code' ? 'Participants enter a 4-digit code to check in' : 'Participants tap a button to check in'}
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+            <TouchableOpacity
+              style={[styles.modeBtn, { borderColor: checkinMode === 'button' ? colors.primary : colors.border, backgroundColor: checkinMode === 'button' ? colors.primary + '12' : 'transparent' }]}
+              onPress={() => setCheckinMode('button')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name='hand-left-outline' size={16} color={checkinMode === 'button' ? colors.primary : colors.textMuted} />
+              <Text style={[typography.caption, { color: checkinMode === 'button' ? colors.primary : colors.textMuted, fontWeight: '600' }]}>Tap button</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, { borderColor: checkinMode === 'code' ? colors.primary : colors.border, backgroundColor: checkinMode === 'code' ? colors.primary + '12' : 'transparent' }]}
+              onPress={() => setCheckinMode('code')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name='keypad-outline' size={16} color={checkinMode === 'code' ? colors.primary : colors.textMuted} />
+              <Text style={[typography.caption, { color: checkinMode === 'code' ? colors.primary : colors.textMuted, fontWeight: '600' }]}>4-digit code</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Price ── */}
@@ -1420,6 +1450,16 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
   // Price
   priceRow: {
     flexDirection: 'row',
