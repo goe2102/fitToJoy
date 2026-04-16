@@ -42,6 +42,19 @@ export interface Block {
   created_at: string
 }
 
+// ─── Report ───────────────────────────────────────────────────────────────────
+
+export type ReportReason = 'spam' | 'harassment' | 'inappropriate' | 'fake' | 'other'
+
+export interface Report {
+  id: string
+  reporter_id: string
+  reported_id: string
+  reason: ReportReason
+  description: string | null
+  created_at: string
+}
+
 // ─── Activity ─────────────────────────────────────────────────────────────────
 
 export type ActivityStatus = 'active' | 'cancelled' | 'expired' | 'finished'

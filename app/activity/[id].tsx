@@ -23,6 +23,7 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { useColors } from '@/hooks/useColors'
 import { useAuth } from '@/context/AuthContext'
 import { activityService } from '@/services/activityService'
+import { blockService } from '@/services/blockService'
 import { fetchWeather, type WeatherData } from '@/services/weatherService'
 import { groupChatService } from '@/services/groupChatService'
 import { chatService } from '@/services/chatService'
@@ -76,6 +77,7 @@ function ParticipantItem({
   onKick,
   onMessage,
   waitlistPosition,
+  isBlocked,
   colors,
 }: {
   participant: Participant
@@ -86,14 +88,15 @@ function ParticipantItem({
   onKick?: () => void
   onMessage?: () => void
   waitlistPosition?: number
+  isBlocked?: boolean
   colors: AppColors
 }) {
   const profileId = participant.profile?.id
   return (
     <TouchableOpacity
-      style={[styles.participantRow, { borderBottomColor: colors.border }]}
-      onPress={() => profileId && router.push(`/profile/${profileId}` as any)}
-      activeOpacity={0.7}
+      style={[styles.participantRow, { borderBottomColor: colors.border, opacity: isBlocked ? 0.5 : 1 }]}
+      onPress={() => !isBlocked && profileId && router.push(`/profile/${profileId}` as any)}
+      activeOpacity={isBlocked ? 1 : 0.7}
     >
       {participant.profile?.avatar_url ? (
         <Image source={{ uri: participant.profile.avatar_url }} style={styles.avatar} contentFit='cover' />
@@ -111,6 +114,11 @@ function ParticipantItem({
             <Ionicons name='checkmark-circle' size={15} color={colors.primary} />
           )}
         </View>
+        {isBlocked && (
+          <Text style={[typography.caption, { color: colors.textMuted, marginTop: 1 }]}>
+            You blocked this user
+          </Text>
+        )}
       </View>
 
       {waitlistPosition !== undefined && (
@@ -398,6 +406,7 @@ export default function ActivityManageScreen() {
   const [pending, setPending] = useState<Participant[]>([])
   const [joined, setJoined] = useState<Participant[]>([])
   const [waitlisted, setWaitlisted] = useState<Participant[]>([])
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set())
   const [myStatus, setMyStatus] = useState<ParticipantStatus | null>(null)
   const [myCheckedIn, setMyCheckedIn] = useState(false)
   const [checkingIn, setCheckingIn] = useState(false)
@@ -420,18 +429,20 @@ export default function ActivityManageScreen() {
   const loadData = useCallback(async () => {
     if (!id || !user) return
     setLoading(true)
-    const [{ data: act }, { data: pend }, { data: join }, { data: wait }, status, checkedIn] = await Promise.all([
+    const [{ data: act }, { data: pend }, { data: join }, { data: wait }, status, checkedIn, { data: blocked }] = await Promise.all([
       activityService.getActivityById(id),
       activityService.getPendingParticipants(id),
       activityService.getParticipants(id),
       activityService.getWaitlist(id),
       activityService.getMyParticipantStatus(id, user.id),
       activityService.getMyCheckedIn(id, user.id),
+      blockService.getBlockedUsers(user.id),
     ])
     setActivity(act)
     setPending(pend)
     setJoined(join)
     setWaitlisted(wait)
+    setBlockedUserIds(new Set(blocked))
     setMyStatus(status)
     setMyCheckedIn(checkedIn)
     setLoading(false)
@@ -493,6 +504,35 @@ export default function ActivityManageScreen() {
     if (!user) return
     const { data: convId } = await chatService.getOrCreateConversation(user.id, targetUserId)
     if (convId) router.push(`/chat/${convId}` as any)
+  }
+
+  const [joining, setJoining] = useState(false)
+
+  const handleJoin = async () => {
+    if (!activity || !user) return
+    setJoining(true)
+    const { error, waitlisted } = await activityService.join(
+      activity.id,
+      user.id,
+      activity.is_public,
+      undefined,
+      activity.host_id,
+      activity.title,
+      activity.max_participants ?? null
+    )
+    setJoining(false)
+    if (error) {
+      Alert.alert('Could not join', error.message)
+      return
+    }
+    const newStatus: ParticipantStatus = waitlisted ? 'waitlisted' : activity.is_public ? 'joined' : 'pending'
+    setMyStatus(newStatus)
+    if (newStatus === 'joined') {
+      scheduleStartNotification(activity.id, activity.title, activity.date, activity.start_time)
+    }
+    // Refresh participant list
+    const { data: join } = await activityService.getParticipants(activity.id)
+    setJoined(join)
   }
 
   const handleLeave = () => {
@@ -589,9 +629,13 @@ export default function ActivityManageScreen() {
   const isHost = activity?.host_id === user?.id
   const isParticipant = joined.some((p) => p.user_id === user?.id)
   const isWaitlisted = myStatus === 'waitlisted'
+  const isPending = myStatus === 'pending'
   const hasStarted = activity ? activityService.msUntilStart(activity.date, activity.start_time) <= 0 : false
   const canEdit = isHost && !hasStarted && activity?.status === 'active'
   const showCheckIn = isParticipant && hasStarted && activity?.status === 'active'
+  const joinClosed = activity ? activityService.isJoinClosed(activity.date, activity.start_time, activity.join_cutoff_minutes) : false
+  const isFull = activity?.max_participants != null && joined.length >= activity.max_participants
+  const canJoin = !isHost && !isParticipant && !isWaitlisted && !isPending && !hasStarted && activity?.status === 'active' && !joinClosed
 
   if (loading) {
     return (
@@ -623,7 +667,7 @@ export default function ActivityManageScreen() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={['bottom']}>
       {/* ── Body ── */}
       <ScrollView
-        contentContainerStyle={{ paddingBottom: (showCheckIn && !myCheckedIn) ? insets.bottom + 100 : insets.bottom + spacing.xl }}
+        contentContainerStyle={{ paddingBottom: (showCheckIn && !myCheckedIn) || canJoin ? insets.bottom + 100 : insets.bottom + spacing.xl }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero ── */}
@@ -946,7 +990,8 @@ export default function ActivityManageScreen() {
                   isPending={false}
                   activityTitle={activity.title}
                   onKick={isHost ? () => onKick(p) : undefined}
-                  onMessage={p.user_id !== user?.id ? () => handleDM(p.user_id) : undefined}
+                  onMessage={p.user_id !== user?.id && !blockedUserIds.has(p.user_id) ? () => handleDM(p.user_id) : undefined}
+                  isBlocked={blockedUserIds.has(p.user_id)}
                   colors={colors}
                 />
               ))}
@@ -973,6 +1018,7 @@ export default function ActivityManageScreen() {
                   activityTitle={activity.title}
                   waitlistPosition={i + 1}
                   onKick={() => onKickFromWaitlist(p)}
+                  isBlocked={blockedUserIds.has(p.user_id)}
                   colors={colors}
                 />
               ))}
@@ -1114,6 +1160,56 @@ export default function ActivityManageScreen() {
               <>
                 <Ionicons name='location-outline' size={18} color='#fff' />
                 <Text style={[typography.label, { color: '#fff' }]}>Check In</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Sticky Join button ── */}
+      {canJoin && (
+        <View style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          paddingHorizontal: spacing.md,
+          paddingBottom: insets.bottom + spacing.sm,
+          paddingTop: spacing.sm,
+          backgroundColor: colors.background,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+        }}>
+          <TouchableOpacity
+            onPress={handleJoin}
+            activeOpacity={0.85}
+            disabled={joining}
+            style={{
+              backgroundColor: isFull ? colors.surfaceElevated : colors.primary,
+              borderRadius: radius.full,
+              paddingVertical: spacing.md,
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              gap: spacing.sm,
+            }}
+          >
+            {joining ? (
+              <ActivityIndicator size='small' color='#fff' />
+            ) : isFull ? (
+              <>
+                <Ionicons name='hourglass-outline' size={18} color={colors.text} />
+                <Text style={[typography.label, { color: colors.text }]}>Join Waitlist</Text>
+              </>
+            ) : activity?.is_public ? (
+              <>
+                <Ionicons name='checkmark-circle-outline' size={18} color='#fff' />
+                <Text style={[typography.label, { color: '#fff' }]}>Join</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name='paper-plane-outline' size={18} color='#fff' />
+                <Text style={[typography.label, { color: '#fff' }]}>Request to Join</Text>
               </>
             )}
           </TouchableOpacity>

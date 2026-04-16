@@ -272,6 +272,7 @@ export default function CreateActivityScreen() {
 
   const canSave =
     title.trim().length >= 2 &&
+    !!coverBase64 &&
     !saving &&
     (unlimited || maxParticipants.trim().length > 0)
 
@@ -474,8 +475,8 @@ export default function CreateActivityScreen() {
               <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.sm }]}>
                 Add cover photo
               </Text>
-              <Text style={[typography.caption, { color: colors.textMuted, marginTop: 2 }]}>
-                Shown in map markers · Optional
+              <Text style={[typography.caption, { color: colors.primary, marginTop: 2, fontWeight: '600' }]}>
+                Required
               </Text>
             </View>
           )}

@@ -1,6 +1,4 @@
 import React, { useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { setLanguage, LANGUAGES, type LanguageCode } from '@/i18n'
 import {
   View,
   Text,
@@ -26,8 +24,23 @@ import { profileService } from '@/services/profileService'
 import { blockService } from '@/services/blockService'
 import { Image } from 'expo-image'
 import { FlatList } from 'react-native'
-import { ScreenHeader, ModalHeader, SearchBar, SectionLabel } from '@/components/ui'
 import { radius, spacing, typography } from '@/constants/theme'
+
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+function SectionHeader({
+  title,
+  colors,
+}: {
+  title: string
+  colors: ReturnType<typeof useColors>
+}) {
+  return (
+    <Text style={[s.sectionTitle, { color: colors.textMuted }]}>
+      {title.toUpperCase()}
+    </Text>
+  )
+}
 
 // ─── Settings Row ─────────────────────────────────────────────────────────────
 
@@ -124,7 +137,6 @@ function EditModal({
   error?: string
 }) {
   const colors = useColors()
-  const { t } = useTranslation()
   const [draft, setDraft] = useState(value)
 
   React.useEffect(() => {
@@ -146,7 +158,19 @@ function EditModal({
           style={[s.modalSafe, { backgroundColor: colors.background }]}
           edges={['top', 'bottom']}
         >
-          <ModalHeader title={title} onClose={onClose} />
+          <View style={s.modalTop}>
+            <Text style={[typography.h3, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={12}
+              style={[
+                s.modalClose,
+                { backgroundColor: colors.surfaceElevated },
+              ]}
+            >
+              <Ionicons name='close' size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
 
           <View
             style={[
@@ -200,7 +224,7 @@ function EditModal({
             {saving ? (
               <ActivityIndicator size='small' color='#fff' />
             ) : (
-              <Text style={[typography.label, { color: '#fff' }]}>{t('common.save')}</Text>
+              <Text style={[typography.label, { color: '#fff' }]}>Save</Text>
             )}
           </TouchableOpacity>
         </SafeAreaView>
@@ -229,10 +253,10 @@ function BlockedUsersModal({
   onClose: () => void
 }) {
   const colors = useColors()
-  const { t } = useTranslation()
   const [users, setUsers] = useState<BlockedUser[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [unblocking, setUnblocking] = useState<string | null>(null)
 
   React.useEffect(() => {
@@ -245,23 +269,19 @@ function BlockedUsersModal({
   }, [visible, userId])
 
   const onUnblock = (user: BlockedUser) => {
-    Alert.alert(
-      t('settings.unblockConfirmTitle'),
-      t('settings.unblockConfirmMessage', { username: user.username }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('settings.unblock'),
-          style: 'destructive',
-          onPress: async () => {
-            setUnblocking(user.id)
-            await blockService.unblock(userId, user.id)
-            setUsers((prev) => prev.filter((u) => u.id !== user.id))
-            setUnblocking(null)
-          },
+    Alert.alert('Unblock', `Unblock @${user.username}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unblock',
+        style: 'destructive',
+        onPress: async () => {
+          setUnblocking(user.id)
+          await blockService.unblock(userId, user.id)
+          setUsers((prev) => prev.filter((u) => u.id !== user.id))
+          setUnblocking(null)
         },
-      ]
-    )
+      },
+    ])
   }
 
   const filtered = query.trim()
@@ -289,13 +309,55 @@ function BlockedUsersModal({
         style={[s.modalSafe, { backgroundColor: colors.background }]}
         edges={['top', 'bottom']}
       >
-        <ModalHeader title={t('settings.blockedUsersTitle')} onClose={onClose} />
-        <SearchBar
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t('settings.blockedUsersSearch')}
-          style={{ marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.sm }}
-        />
+        <View style={s.modalTop}>
+          <Text style={[typography.h3, { color: colors.text }]}>
+            Blocked Users
+          </Text>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={12}
+            style={[s.modalClose, { backgroundColor: colors.surfaceElevated }]}
+          >
+            <Ionicons name='close' size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search */}
+        <View
+          style={[
+            s.blockSearchBar,
+            {
+              backgroundColor: colors.surfaceElevated,
+              borderColor: searchFocused ? colors.primary : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name='search'
+            size={16}
+            color={searchFocused ? colors.primary : colors.textMuted}
+          />
+          <TextInput
+            style={[s.blockSearchInput, { color: colors.text }]}
+            placeholder='Search blocked users…'
+            placeholderTextColor={colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            autoCorrect={false}
+            autoCapitalize='none'
+          />
+          {query.length > 0 && (
+            <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons
+                name='close-circle'
+                size={16}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
 
         {loading ? (
           <ActivityIndicator
@@ -313,7 +375,7 @@ function BlockedUsersModal({
           >
             <Ionicons name='ban-outline' size={40} color={colors.textMuted} />
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              {query ? t('common.noResults') : t('settings.noBlockedUsers')}
+              {query ? 'No results' : 'No blocked users'}
             </Text>
           </View>
         ) : (
@@ -375,7 +437,7 @@ function BlockedUsersModal({
                       { color: colors.textMuted, marginTop: 1 },
                     ]}
                   >
-                    {t('settings.blockedSince')} {blockedSince(item.blocked_since)}
+                    Blocked {blockedSince(item.blocked_since)}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -393,7 +455,7 @@ function BlockedUsersModal({
                         { color: colors.error, fontWeight: '700' },
                       ]}
                     >
-                      {t('settings.unblock')}
+                      Unblock
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -413,7 +475,6 @@ export default function SettingsScreen() {
   const { user, signOut } = useAuth()
   const { profile, updateProfile } = useProfile()
   const { preference, setPreference } = useTheme()
-  const { t, i18n } = useTranslation()
 
   const [usernameModal, setUsernameModal] = useState(false)
   const [bioModal, setBioModal] = useState(false)
@@ -482,27 +543,27 @@ export default function SettingsScreen() {
     await updateProfile({ is_private: val })
     if (val)
       Alert.alert(
-        t('settings.privateAccountAlert'),
-        t('settings.privateAccountAlertMessage')
+        'Account private',
+        'Only your followers can see your activities.'
       )
   }
 
   const onSignOut = () => {
-    Alert.alert(t('settings.signOutConfirmTitle'), t('settings.signOutConfirmMessage'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('settings.signOut'), style: 'destructive', onPress: signOut },
+    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: signOut },
     ])
   }
 
   const usernameHint =
     usernameState === 'checking'
-      ? t('settings.usernameChecking')
+      ? 'Checking…'
       : usernameState === 'available'
-        ? t('settings.usernameAvailable')
+        ? '✓ Available'
         : usernameState === 'taken'
-          ? t('settings.usernameTaken')
+          ? 'Username taken'
           : usernameState === 'invalid'
-            ? t('settings.usernameInvalid')
+            ? 'Min. 3 characters'
             : undefined
   const usernameError =
     usernameState === 'taken' || usernameState === 'invalid'
@@ -514,7 +575,17 @@ export default function SettingsScreen() {
       style={[s.safe, { backgroundColor: colors.background }]}
       edges={['top']}
     >
-      <ScreenHeader title={t('settings.title')} onBack={() => router.back()} />
+      {/* Header */}
+      <View style={[s.header, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={12}
+          style={s.backBtn}
+        >
+          <Ionicons name='chevron-back' size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[typography.h2, { color: colors.text }]}>Settings</Text>
+      </View>
 
       <ScrollView
         style={{ backgroundColor: colors.background }}
@@ -522,11 +593,11 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Profile ── */}
-        <SectionLabel title={t('settings.profile')} />
+        <SectionHeader title='Profile' colors={colors} />
         <View style={[s.group, { backgroundColor: colors.surface }]}>
           <SettingsRow
             icon='at-outline'
-            label={t('settings.changeUsername')}
+            label='Change username'
             sublabel={profile?.username ? `@${profile.username}` : undefined}
             onPress={() => {
               setUsernameState('idle')
@@ -537,22 +608,22 @@ export default function SettingsScreen() {
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
             icon='pencil-outline'
-            label={t('settings.changeBio')}
-            sublabel={profile?.bio ?? t('settings.noBio')}
+            label='Change bio'
+            sublabel={profile?.bio ?? 'No bio yet'}
             onPress={() => setBioModal(true)}
             colors={colors}
           />
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
             icon='ban-outline'
-            label={t('settings.blockedUsers')}
+            label='Blocked users'
             onPress={() => setBlockedModal(true)}
             colors={colors}
           />
         </View>
 
         {/* ── Appearance ── */}
-        <SectionLabel title={t('settings.appearance')} />
+        <SectionHeader title='Appearance' colors={colors} />
         <View style={[s.group, { backgroundColor: colors.surface }]}>
           {(['light', 'dark', 'automatic'] as ThemePreference[]).map(
             (opt, i, arr) => (
@@ -583,7 +654,7 @@ export default function SettingsScreen() {
                   <Text
                     style={[typography.label, { color: colors.text, flex: 1 }]}
                   >
-                    {t(`settings.${opt}` as any)}
+                    {opt.charAt(0).toUpperCase() + opt.slice(1)}
                   </Text>
                   {preference === opt && (
                     <Ionicons
@@ -603,43 +674,16 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* ── Language ── */}
-        <SectionLabel title={t('settings.languageSection')} />
-        <View style={[s.group, { backgroundColor: colors.surface }]}>
-          {LANGUAGES.map((lang, i, arr) => (
-            <React.Fragment key={lang.code}>
-              <TouchableOpacity
-                style={[s.row, { backgroundColor: colors.surface }]}
-                onPress={() => setLanguage(lang.code as LanguageCode)}
-                activeOpacity={0.7}
-              >
-                <View style={[s.rowIcon, { backgroundColor: colors.primary + '18' }]}>
-                  <Text style={{ fontSize: 18 }}>{lang.flag}</Text>
-                </View>
-                <Text style={[typography.label, { color: colors.text, flex: 1 }]}>
-                  {lang.label}
-                </Text>
-                {i18n.language === lang.code && (
-                  <Ionicons name='checkmark-circle' size={20} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-              {i < arr.length - 1 && (
-                <View style={[s.separator, { backgroundColor: colors.border }]} />
-              )}
-            </React.Fragment>
-          ))}
-        </View>
-
         {/* ── Account ── */}
-        <SectionLabel title={t('settings.account')} />
+        <SectionHeader title='Account' colors={colors} />
         <View style={[s.group, { backgroundColor: colors.surface }]}>
           <SettingsRow
             icon={profile?.is_private ? 'lock-closed-outline' : 'globe-outline'}
-            label={t('settings.privateAccount')}
+            label='Private account'
             sublabel={
               profile?.is_private
-                ? t('settings.privateAccountOn')
-                : t('settings.privateAccountOff')
+                ? 'Only followers see your activities'
+                : 'Everyone can see your activities'
             }
             right={
               <Switch
@@ -654,13 +698,13 @@ export default function SettingsScreen() {
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
             icon='key-outline'
-            label={t('settings.changePassword')}
-            sublabel={t('settings.changePasswordHint')}
+            label='Change password'
+            sublabel='Send a reset code to your email'
             onPress={() =>
               Alert.alert(
-                t('settings.changePasswordAlertTitle'),
-                t('settings.changePasswordAlertMessage'),
-                [{ text: t('common.ok') }]
+                'Change Password',
+                'A password reset code will be sent to your registered email address. Use "Forgot password?" on the login screen.',
+                [{ text: 'OK' }]
               )
             }
             colors={colors}
@@ -668,25 +712,25 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── About ── */}
-        <SectionLabel title={t('settings.about')} />
+        <SectionHeader title='About' colors={colors} />
         <View style={[s.group, { backgroundColor: colors.surface }]}>
           <SettingsRow
             icon='information-circle-outline'
-            label={t('settings.version')}
+            label='Version'
             sublabel='1.0.0'
             colors={colors}
           />
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
             icon='document-text-outline'
-            label={t('settings.terms')}
+            label='Terms of Service'
             onPress={() => {}}
             colors={colors}
           />
           <View style={[s.separator, { backgroundColor: colors.border }]} />
           <SettingsRow
             icon='shield-checkmark-outline'
-            label={t('settings.privacy')}
+            label='Privacy Policy'
             onPress={() => {}}
             colors={colors}
           />
@@ -697,7 +741,7 @@ export default function SettingsScreen() {
         <View style={[s.group, { backgroundColor: colors.surface }]}>
           <SettingsRow
             icon='log-out-outline'
-            label={t('settings.signOut')}
+            label='Sign out'
             destructive
             onPress={onSignOut}
             colors={colors}
@@ -710,9 +754,9 @@ export default function SettingsScreen() {
       {/* ── Modals ── */}
       <EditModal
         visible={usernameModal}
-        title={t('settings.changeUsernameTitle')}
+        title='Change Username'
         value={profile?.username ?? ''}
-        placeholder={t('settings.changeUsernamePlaceholder')}
+        placeholder='Enter new username'
         onClose={() => setUsernameModal(false)}
         onSave={onSaveUsername}
         saving={usernameSaving}
@@ -721,21 +765,19 @@ export default function SettingsScreen() {
       />
       <EditModal
         visible={bioModal}
-        title={t('settings.changeBioTitle')}
+        title='Change Bio'
         value={profile?.bio ?? ''}
-        placeholder={t('settings.changeBioPlaceholder')}
+        placeholder='Tell people about yourself…'
         multiline
         onClose={() => setBioModal(false)}
         onSave={onSaveBio}
         saving={bioSaving}
       />
-      {user && (
-        <BlockedUsersModal
-          visible={blockedModal}
-          userId={user.id}
-          onClose={() => setBlockedModal(false)}
-        />
-      )}
+      <BlockedUsersModal
+        visible={blockedModal}
+        userId={user!.id}
+        onClose={() => setBlockedModal(false)}
+      />
     </SafeAreaView>
   )
 }
@@ -744,7 +786,28 @@ export default function SettingsScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  backBtn: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   body: { padding: spacing.md, paddingBottom: spacing.xxxl },
+  sectionTitle: {
+    ...typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    marginLeft: 4,
+  },
   group: {
     borderRadius: radius.lg,
     overflow: 'hidden',
@@ -774,6 +837,21 @@ const s = StyleSheet.create({
   },
   // ── Modal ──
   modalSafe: { flex: 1 },
+  modalTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  modalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalInputWrap: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.sm,
@@ -791,6 +869,24 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   // ── Blocked users modal ──
+  blockSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  blockSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+  },
   blockRow: {
     flexDirection: 'row',
     alignItems: 'center',

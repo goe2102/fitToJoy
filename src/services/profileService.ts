@@ -89,7 +89,7 @@ export const profileService = {
     return { data: data ?? [], error }
   },
 
-  async getJoinedActivities(userId: string): Promise<{ data: Activity[]; error: Error | null }> {
+  async getJoinedActivities(userId: string, hidePrivate = false): Promise<{ data: Activity[]; error: Error | null }> {
     const { data, error } = await supabase
       .from('participants')
       .select(`
@@ -106,7 +106,9 @@ export const profileService = {
 
     const activities = (data ?? [])
       .map((row: any) => row.activity)
-      .filter((a: any) => a && a.status === 'active')
+      // When viewing someone else's profile, hide private activities they joined
+      // (they joined someone else's invite-only event — that's not their info to share)
+      .filter((a: any) => a && a.status === 'active' && (!hidePrivate || a.is_public))
       .map((a: any) => ({ ...a, participant_count: a.participant_count?.[0]?.count ?? 0 }))
 
     return { data: activities, error }
